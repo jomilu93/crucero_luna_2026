@@ -14,7 +14,8 @@ charismatic Cruise Director agent that hypes everyone up each morning and keeps 
 | Feature freeze (Christmas week is not debugging week) | Dec 19 |
 | **The cruise: Acapulco, Dec 26 – Jan 2** (8 days, 7 nights) | Dec 26 – Jan 2 |
 
-**Director:** *Capitán Lunático*, at the service of La Familia Luna.
+**Director:** *Capitán Lunático*, at the service of La Familia Luna (~20 passengers).
+**Language:** Spanish first; the Capitán switches to English for anyone who writes in English.
 
 ---
 
@@ -209,6 +210,36 @@ free. The cost is asking every relative to install one more app for the trip. Ev
 above WhatsApp in the architecture is channel-agnostic, so flipping is about a day of
 adapter work, not a rewrite.
 
+### 3.5 The Capitán's phone number
+
+**What the number actually has to do.** Nothing geographic. WhatsApp runs over the internet,
+so a +1 number messages a Mexican WhatsApp user exactly like a +52 one, and Meta bills
+template messages by the *recipient's* country, not the sender's. The number only has to
+(a) receive a one-time code by SMS or voice call at registration and at any later
+re-verification Meta asks for, (b) never have been on WhatsApp, and (c) stay under your
+control through Jan 2. Pick for reliability of receiving codes, nothing else.
+
+| Option | Cost | Verdict |
+|---|---|---|
+| **Twilio US local number, SMS-capable** (register it with Meta Cloud API directly, or via Twilio's WhatsApp sender sign-up which runs the OTP step for you) | ~$1.15/month | **Recommended.** Twilio numbers are the virtual numbers with the best track record on WhatsApp verification. Receiving the OTP needs no 10DLC registration (that is for *sending* SMS). Read the code in the Twilio console message log. |
+| **Prepaid eSIM as a second line on your own phone** (Tello, Ultra Mobile PayGo, US Mobile) | ~$3–10/month | **Solid alternative.** A real mobile number is what Meta rates best for SMS codes. Never open WhatsApp with it, and keep the plan paid through Jan 2 in case of re-verification. |
+| Twilio toll-free number | ~$2.15/month | Works, usually via voice OTP; no advantage over local. |
+| Google Voice, TextNow, free "virtual number" apps | free | **Avoid.** Meta rates VoIP numbers "not recommended" for SMS codes and these fail verification often. |
+| A Mexican (+52) number via Twilio | regulatory bundle | **Skip.** Requires identity plus Mexican address proof per Twilio's Mexico rules, and Mexican mobile numbers are barred from automated messaging. Zero benefit for WhatsApp delivery. |
+
+**Display name.** Meta reviews the WhatsApp display name against the business portfolio name.
+Name the portfolio "Crucero Luna" and use "Crucero Luna" (or "Capitán Lunático · Crucero
+Luna") as the display name; everyone saves the contact as Capitán Lunático on their own phone
+anyway. A rejected display name caps the number at 250 business-initiated messages per day,
+which would still be fine for 20 people, but avoid the hassle.
+
+**Before you own any number.** The Meta developer app ships with a **free test number** that
+can message up to 5 pre-verified recipients. Phase 1 development runs on that; the real
+number only has to be live by the Oct 31 gate.
+
+**Cooldowns.** If a code fails, wait 10+ minutes before retrying; repeated failures or a
+number recently deleted from WhatsApp can trigger a cooldown of up to 24 hours.
+
 ---
 
 ## 4. Phased plan
@@ -216,7 +247,7 @@ adapter work, not a rewrite.
 ### Phase 0 — Decisions & accounts (this week, Oct 17–24)
 - [x] Director's name (Capitán Lunático) and trip dates (Dec 26 – Jan 2). Still open:
       language default, apartment "deck map".
-- [ ] Buy/assign a phone number; create a Meta Business portfolio + WhatsApp Cloud API app
+- [ ] Buy a Twilio US local number (see §3.5); create a Meta Business portfolio + WhatsApp Cloud API app
       (no business verification needed); submit the three templates (`morning_knock`,
       `activity_reminder`, `new_activity`).
 - [ ] **Oct 31 gate:** test template delivered to your own phone from the real number, or
@@ -294,11 +325,10 @@ Deliverable: you and two testers can sponsor, sign up, get the morning message, 
 
 ## 7. Open decisions for you
 
-1. Default language (assumption in the persona draft: Spanish first, English mirrored) and the family roster size.
-2. WhatsApp number source (new SIM vs. virtual number) and who owns the Meta Business portfolio.
-3. Avatar vendor appetite: "wow factor at any cost" vs. "nice if it works" (affects how much of Phase 3 to commit to).
-4. Whether the human family WhatsApp group stays human-only (recommended) or you forward the Capitán's daily flyer there.
-5. If Meta is not working by Oct 31: Telegram for everyone, or WhatsApp-only-for-you plus Telegram for the rest? (The plan assumes one channel for all.)
+1. Who owns the Meta Business portfolio and the Twilio account (you, presumably), and the Anthropic/API billing.
+2. Avatar vendor appetite: "wow factor at any cost" vs. "nice if it works" (affects how much of Phase 3 to commit to).
+3. Whether the human family WhatsApp group stays human-only (recommended) or you forward the Capitán's daily flyer there.
+4. If Meta is not working by Oct 31: Telegram for everyone, or WhatsApp-only-for-you plus Telegram for the rest? (The plan assumes one channel for all.)
 
 ## 8. Immediate next steps (what I'd do first if you say go)
 
