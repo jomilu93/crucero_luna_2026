@@ -254,20 +254,22 @@ number recently deleted from WhatsApp can trigger a cooldown of up to 24 hours.
       flip the primary channel to Telegram.
 - [ ] Create Supabase project, Anthropic API key with a monthly spend cap, image-gen key,
       ElevenLabs key. Vercel + Fly.io accounts.
-- [ ] Repo scaffolding (monorepo: `apps/web`, `apps/worker`, `packages/agent`, `packages/db`).
+- [x] Repo scaffolding (pnpm monorepo: `packages/db`, `packages/agent`, `apps/cli`, `evals`; `apps/web` and `apps/worker` come with Phase 1).
 
 ### Phase 1 — The cruise exists (Oct 24 – Nov 7)
 Deliverable: you and two testers can sponsor, sign up, get the morning message, see TV mode.
-- Postgres schema + migrations; seed with a sample week of activities.
-- Agent core: persona prompt, tools, Tool Runner loop, per-person memory, message log.
+- [x] Postgres schema (`packages/db/sql/001_init.sql`), `Store` contract, dev `MemoryStore`, sample week seeded. [ ] Postgres `Store` implementation.
+- [x] Agent core: persona prompt, 14 tools, Tool Runner loop, per-person memory, message log, local CLI harness (`pnpm chat`).
 - WhatsApp webhook (inbound text, buttons) + outbound (text, image, interactive, templates).
 - Web app: program view, activity page, sponsor form, "my cruise", magic-link login.
 - TV mode route: today's program, "now / next" with countdown, QR codes to sign up, rotating
   flyers, auto-refresh via Supabase realtime.
 - Scheduler: morning run per person, reminder sweep, ICS feed per person.
 - Flyer generator v1 (image model + overlaid text, 3 templates: Fiesta, Zen, Retro Cruise).
-- Eval set: ~40 realistic WhatsApp messages (Spanglish, typos, kids, "cancel yoga", "who's
-  going to bingo") with expected tool calls; run it on every persona/prompt change.
+- [x] Eval set: 40 realistic WhatsApp messages (Spanglish, typos, kids, "cancel yoga", "who's
+  going to bingo") with expected tool calls (`pnpm eval`); run it on every persona/prompt change.
+- [x] Morning-program generator (deterministic brief + structured output: template knock line,
+  full message, button ids). [ ] Hook it to the scheduler.
 
 ### Phase 2 — Delightful & robust (Nov 7 – Nov 17)
 - WhatsApp voice notes in both directions (STT → agent → TTS voice note).

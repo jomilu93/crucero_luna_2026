@@ -1,0 +1,22 @@
+{
+  "name": "crucero-luna-2026",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Capitán Lunático: the Cruise Director agent for La Familia Luna, Acapulco Dec 26 – Jan 2.",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "chat": "tsx apps/cli/src/chat.ts",
+    "morning": "tsx apps/cli/src/morning.ts",
+    "eval": "tsx evals/run.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
+  }
+}
