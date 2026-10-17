@@ -1,0 +1,250 @@
+# Crucero Luna 2026 — Cruise Director Agent: Build Plan
+
+**Goal.** Turn a December apartment stay in Acapulco into a "cruise": a shared daily
+program of family-sponsored activities, personal sign-ups and reminders, and a funny,
+charismatic Cruise Director agent that hypes everyone up each morning and keeps the days full.
+
+**Timeline anchors (today is 2026-10-17).**
+
+| Milestone | Target |
+|---|---|
+| Share with the extended family, start collecting sponsored activities | ~Nov 14–17 |
+| Calendar "filling up" phase (sponsor + sign up) | Nov 17 – trip start |
+| Trip (daily program, morning hype, reminders) | December (exact dates TBD) |
+
+---
+
+## 1. Recommendation in one paragraph
+
+Build **WhatsApp as the primary channel** (everyone already has it, zero install, works for
+abuelos and kids alike), a **web app with a "TV channel" mode** for the shared daily program
+on the apartment TV, and add the **voice + video "call the director"** experience as the
+third layer once the first two work. Design it so WhatsApp alone is a complete product: if
+the avatar is flaky on day 3 of the trip, nobody's vacation breaks. Calendar integration is a
+per-person subscribable calendar feed, not OAuth into everyone's Google/Apple accounts.
+
+Why not voice/video first: it is the most expensive, most latency-sensitive and most fragile
+piece, and it is the one piece nobody *needs* to sign up for "Sunrise yoga with Sofia". It is,
+however, the piece that makes this feel like a cruise-room TV, so it stays in scope as Phase 3.
+
+---
+
+## 2. Experience design
+
+### 2.1 The three surfaces
+
+| Surface | What it's for | Who uses it |
+|---|---|---|
+| **WhatsApp** (1:1 chat with the Director + one family group) | Morning hype message, reminders, "sign me up", "sponsor an activity", flyers as images, voice notes both ways | Everyone, every day |
+| **Web app / PWA** (`crucero.luna` or similar) | Full calendar view, sponsor form with flyer generator, personal "my cruise" page, **TV mode** (kiosk screen for the apartment TV) | Organizers; the TV in the living room |
+| **Video call with the Director** (in the web app, "Call the Bridge" button) | Live talking avatar: "what's happening today?", "put me down for bingo", bedtime jokes for the kids | Fun / wow factor, a few times a day |
+
+### 2.2 Core loops
+
+1. **Sponsor an activity** (pre-trip and during). Via WhatsApp ("I want to host sunrise yoga
+   Tuesday at 7") or the web form. The Director interviews for missing details (time, place,
+   capacity, what to bring), confirms, generates a flyer, and announces it to the group.
+2. **Sign up.** From the morning message (tap a button), from the TV QR code, from the web app,
+   or by telling the Director. Sign-ups drive reminders and the personal calendar feed.
+3. **Morning program (07:30 local, configurable).** Personalized per person: today's
+   headline, *their* activities, one joke, and if their day is empty, 2–3 suggestions with
+   one-tap sign-up. The group gets one "Daily Program" message + flyer image.
+4. **Reminders.** 30 min before each activity you signed up for (sponsors get a 60-min "your
+   guests are counting on you" nudge). Quiet hours respected. Kids' reminders can route to a
+   parent.
+5. **Evening recap (optional).** Photos of the day, tomorrow's teaser, "sponsor slots still
+   open tomorrow".
+
+### 2.3 The personality
+
+Cruise Director with a name the family picks (candidates: *Capitán Lunático*, *Director
+Marisol*, *El Comodoro*). Bilingual Spanish/English, mirrors whoever is talking. Running gags:
+the apartment is "the ship" (balcony = Lido Deck, kitchen = Galley, the elevator = "the
+tender"), fake ship announcements ("*ding-dong* Attention passengers…"), ranks awarded for
+participation ("Sofia has been promoted to Yoga Admiral"). Rules: never mean, never jokes
+*about* a family member's body/age/relationship, jokes are shorter in reminders than in the
+morning message, always useful first (time, place, who's hosting), then funny.
+
+Draft system prompt: `docs/persona.md`.
+
+---
+
+## 3. Architecture
+
+```
+                 ┌──────────────────────────────────────────────┐
+  WhatsApp ───▶  │  Channel adapters (WhatsApp Cloud API webhook,│
+  Web/PWA  ───▶  │  web chat, voice pipeline)                    │
+  Voice call ─▶  │                                              │
+                 └───────────────┬──────────────────────────────┘
+                                 ▼
+                 ┌──────────────────────────────────────────────┐
+                 │  Cruise Director agent (Claude + tools)       │
+                 │  persona prompt • per-person memory • tools:  │
+                 │  calendar CRUD, sign-ups, reminders, flyers,  │
+                 │  send message, who's-free, weather            │
+                 └───────────────┬──────────────────────────────┘
+                                 ▼
+   ┌──────────────┐   ┌─────────────────┐   ┌──────────────────────┐
+   │ Postgres     │   │ Scheduler/worker │   │ Media: flyer gen,    │
+   │ (Supabase)   │   │ (morning msgs,   │   │ TTS voice notes,     │
+   │ + storage    │   │ reminders, ICS)  │   │ avatar video         │
+   └──────────────┘   └─────────────────┘   └──────────────────────┘
+```
+
+### 3.1 Stack (opinionated)
+
+| Layer | Choice | Why |
+|---|---|---|
+| Language | **TypeScript** end to end | One language for web, webhooks, agent, and the realtime voice SDKs, which are all JS-first |
+| Web app | Next.js (App Router) as PWA; TV mode is just a route with big type and auto-refresh | Fast to build, easy to cast to a TV via Chromecast/AirPlay tab mirroring |
+| DB / auth / storage / realtime | **Supabase** (Postgres, magic-link auth, storage for flyers, realtime for the TV screen) | Zero-ops, free tier is enough for one family |
+| Agent brain | **Claude Opus 5.5** (`claude-opus-5-5`) through the Anthropic TypeScript SDK **Tool Runner** (`client.beta.messages.toolRunner` + `betaZodTool`) | Best personality + reliable tool use; the runner drives the tool loop so we only write tool functions. Adaptive thinking, effort `low`–`medium` for chat turns (fast, cheap, still funny) |
+| Cheap helpers | **Claude Haiku 5.5** for message classification, voice-note transcript cleanup, flyer copy variants | ~40× cheaper for mechanical steps |
+| Messaging | **WhatsApp Business Cloud API** (Meta), with **Telegram Bot API as a fallback** if Meta verification stalls | WhatsApp is where the family lives; Telegram is a 10-minute setup if we need a plan B |
+| Scheduler | A worker process with `pg_cron`/`cron` jobs (or Supabase cron) firing: 07:30 morning run, 5-minute reminder sweep, nightly ICS rebuild | Simple, inspectable, one timezone (America/Mexico_City) |
+| Flyers | Claude writes the concept + copy → image model generates the art (e.g. Google Imagen, OpenAI gpt-image, or Flux via fal.ai; pick by Spanish-friendliness and price) → **text is overlaid by us** with `satori`/`sharp` from a few templates | Image models still garble text; overlaying title/time/host guarantees a readable flyer every time |
+| Calendar | Per-person **ICS feed URL** (`/cal/<token>.ics`) that people subscribe to in Apple/Google Calendar once; optional "Add to calendar" links per activity | No OAuth onboarding for 15+ relatives; updates propagate automatically |
+| Voice (Phase 2) | WhatsApp voice notes: STT (Deepgram or Whisper) → agent → TTS (ElevenLabs, Spanish-capable voice) → voice note back | "Talk to the Director" with no new app, cheap, forgiving of latency |
+| Voice + video (Phase 3) | Realtime pipeline on **LiveKit Agents** or **Pipecat**: STT → Claude (same tools, same persona) → TTS → **streaming avatar** (e.g. Tavus, Simli, HeyGen Interactive Avatar) rendered in a `<video>` in the web app | Open-source orchestration, swappable vendors, same brain as WhatsApp so the Director is one character everywhere |
+| Hosting | Vercel (web) + Fly.io or Railway (worker + voice agent) | Cheap, always-on worker for the scheduler |
+| Observability | Simple message log table + a `/admin` page; Anthropic usage dashboard; one Slack/WhatsApp "ops" alert to you on errors | Enough to run a family app |
+
+Safety nets on Claude calls: include server-side `fallbacks: "default"` (beta
+`server-side-fallback-2026-07-01`) so a rare refusal falls through to another model instead
+of a silent morning; check `stop_reason` before reading content; use prompt caching with the
+persona + tool list first and the per-person context after the cache breakpoint.
+
+### 3.2 Data model (first cut)
+
+```
+person        id, name, nickname, phone_e164, language (es|en), role (adult|kid), guardian_id,
+              quiet_hours, wake_time, ics_token, joined_at, preferences(jsonb)
+activity      id, title, emoji, description, sponsor_id, starts_at, ends_at, location
+              (free text: "Lido Deck (balcony)", "Playa Condesa"), capacity, bring,
+              recurrence (none|daily|days[]), status (draft|published|cancelled),
+              flyer_url, created_via (whatsapp|web|voice)
+signup        activity_id, person_id, status (going|maybe|out), reminded_at, created_at
+message_log   id, person_id, channel, direction, body, media_url, tool_calls(jsonb), ts
+reminder_job  id, activity_id, person_id, fire_at, kind (t-30|sponsor-t-60|morning), sent_at
+memory        person_id, key, value   (e.g. "hates early mornings", "vegetarian", running gag)
+```
+
+### 3.3 Agent tools (the whole API the Director sees)
+
+`get_program(date)`, `get_my_day(person, date)`, `create_activity(...)`,
+`update_activity(...)`, `cancel_activity(id, reason)`, `signup(person, activity, status)`,
+`who_is_going(activity)`, `suggest_for_empty_slots(person, date)`,
+`generate_flyer(activity, vibe)`, `send_message(person|group, text, media?)`,
+`schedule_reminder(...)`, `remember(person, key, value)`, `get_weather(date)`.
+Strict JSON schemas (`strict: true`) so sign-ups never land on the wrong activity.
+
+### 3.4 Channel notes you need to know up front
+
+- **WhatsApp Cloud API realities.** You need a Meta Business account, a dedicated phone
+  number that has never been on WhatsApp (a cheap SIM or a virtual number works), and
+  business verification. Business-initiated messages outside a 24-hour window (the morning
+  message!) must use **pre-approved message templates**; replies inside 24 h are free-form.
+  Interactive buttons/lists are perfect for "Sign up / Maybe / Pass". **Start the Meta setup
+  this week**: verification can take days to weeks, and template approval another day or two.
+- **Group chats.** The Cloud API cannot post into a normal WhatsApp group as a bot. Options:
+  (a) the Director DMs everyone and the human group stays human (recommended; the Director
+  can still send one "Daily Program" to each person), (b) you forward the daily flyer to the
+  family group yourself, (c) use a broadcast list. Design assumes (a).
+- **Telegram** supports bots in groups natively and needs no verification, which is why it
+  is the fallback, not the first choice.
+- **Consent.** Everyone opts in by sending the first message ("Hola capitán") and can say
+  "stop" / "menos chistes" / "solo recordatorios" any time; the agent has a tool for that.
+
+---
+
+## 4. Phased plan
+
+### Phase 0 — Decisions & accounts (this week, Oct 17–24)
+- [ ] Pick the Director's name, language default, trip dates, apartment "deck map".
+- [ ] Buy/assign a phone number; create Meta Business + WhatsApp Cloud API app; submit
+      verification; draft templates (`daily_program`, `activity_reminder`, `new_activity`).
+- [ ] Create Supabase project, Anthropic API key with a monthly spend cap, image-gen key,
+      ElevenLabs key. Vercel + Fly.io accounts.
+- [ ] Repo scaffolding (monorepo: `apps/web`, `apps/worker`, `packages/agent`, `packages/db`).
+
+### Phase 1 — The cruise exists (Oct 24 – Nov 7)
+Deliverable: you and two testers can sponsor, sign up, get the morning message, see TV mode.
+- Postgres schema + migrations; seed with a sample week of activities.
+- Agent core: persona prompt, tools, Tool Runner loop, per-person memory, message log.
+- WhatsApp webhook (inbound text, buttons) + outbound (text, image, interactive, templates).
+- Web app: program view, activity page, sponsor form, "my cruise", magic-link login.
+- TV mode route: today's program, "now / next" with countdown, QR codes to sign up, rotating
+  flyers, auto-refresh via Supabase realtime.
+- Scheduler: morning run per person, reminder sweep, ICS feed per person.
+- Flyer generator v1 (image model + overlaid text, 3 templates: Fiesta, Zen, Retro Cruise).
+- Eval set: ~40 realistic WhatsApp messages (Spanglish, typos, kids, "cancel yoga", "who's
+  going to bingo") with expected tool calls; run it on every persona/prompt change.
+
+### Phase 2 — Delightful & robust (Nov 7 – Nov 17)
+- WhatsApp voice notes in both directions (STT → agent → TTS voice note).
+- Suggestions engine for empty days (prefers activities with few sign-ups, respects memory).
+- Sponsor nudges ("Thursday afternoon is empty, who wants to host?"), capacity + waitlists.
+- Admin page for you: pause the Director, edit any activity, resend a morning message, cost meter.
+- Onboarding flow: first message → name confirmation → language → quiet hours → "subscribe to
+  your calendar" link → first joke.
+- Pilot with 3–5 family members for a week; fix what confuses them.
+- **Nov 14–17: launch to the whole family** with a "sponsor an activity" campaign.
+
+### Phase 3 — The bridge (Nov 17 – Dec, in parallel with the calendar filling up)
+- Realtime voice agent (LiveKit Agents or Pipecat) sharing the same tools and persona.
+- Streaming avatar in the web app ("Call the Bridge"), works on a phone and on the TV.
+- Pre-recorded fallbacks: a daily 30-second "good morning" video the avatar vendor renders
+  overnight, shown in TV mode even if live calls are down.
+- Latency budget: < 1.5 s to first word; cache persona prefix; effort `low` on voice turns.
+- Hard kill switch: if the live call fails twice, the button becomes "Send the Director a
+  voice note on WhatsApp" instead of a broken call.
+
+### Phase 4 — At sea (the trip)
+- On-call runbook (you): daily cost check, pause/resume, manual program override.
+- Photo collection: people send photos to the Director, nightly recap collage.
+- End-of-cruise awards ceremony generated from participation data (most activities hosted,
+  most early mornings, etc.).
+
+---
+
+## 5. Risks and how the plan handles them
+
+| Risk | Mitigation |
+|---|---|
+| Meta verification/template approval late | Start Phase 0 now; Telegram fallback is a day of work; web + ICS still function |
+| Avatar is laggy or expensive | Phase 3 is additive; voice notes in Phase 2 already give "voice"; pre-rendered daily video as fallback |
+| Jokes misfire with family members | Persona rules + a "humor level" per person + eval set with cringe-check; "menos chistes" command |
+| Relatives don't onboard | Onboarding is one WhatsApp message; you can pre-register everyone by phone number; TV + QR codes capture the rest |
+| Runaway cost | API spend caps, Haiku for mechanical steps, caching, per-person daily message limits |
+| Timezone/DST bugs in reminders | Store UTC, schedule in `America/Mexico_City`, test the morning run with a fake clock |
+| Kids / privacy | Guardian routing for under-13s, no photos leave the family bucket, numbers never shared with vendors beyond WhatsApp itself |
+
+---
+
+## 6. Rough running cost for the trip (order of magnitude, verify current prices)
+
+| Item | Estimate |
+|---|---|
+| Claude (≈20 people × ~15 turns/day × 2 weeks, Opus 5.5 with caching + Haiku helpers) | $20–60 total |
+| WhatsApp conversations (utility/marketing templates per person per day) | $10–40 total |
+| Flyer image generation (≈100 flyers) | $5–15 |
+| TTS voice notes | $5–20 |
+| Avatar + realtime voice minutes (Phase 3) | $0.1–0.5 per minute; budget ~$50–150 for the trip |
+| Hosting (Vercel hobby, Fly.io small VM, Supabase free/pro) | $0–30/month |
+
+---
+
+## 7. Open decisions for you
+
+1. Director's name and default language (assumption in the persona draft: Spanish first, English mirrored).
+2. Exact trip dates and the family roster size (drives the message budget and avatar budget).
+3. WhatsApp number source (new SIM vs. virtual number) and who owns the Meta Business account.
+4. Avatar vendor appetite: "wow factor at any cost" vs. "nice if it works" (affects how much of Phase 3 to commit to).
+5. Whether the human family WhatsApp group stays human-only (recommended) or you want the Director's daily flyer forwarded there by you.
+
+## 8. Immediate next steps (what I'd do first if you say go)
+
+1. Scaffold the monorepo (TypeScript, Next.js, Supabase, worker) with the schema in §3.2.
+2. Implement the agent package with the persona in `docs/persona.md`, the tools in §3.3, and a CLI harness so you can chat with the Director locally before any channel exists.
+3. Build the eval set and the morning-message generator next, then the WhatsApp adapter once Meta approves the number.
