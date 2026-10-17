@@ -8,9 +8,13 @@ charismatic Cruise Director agent that hypes everyone up each morning and keeps 
 
 | Milestone | Target |
 |---|---|
-| Share with the extended family, start collecting sponsored activities | ~Nov 14–17 |
-| Calendar "filling up" phase (sponsor + sign up) | Nov 17 – trip start |
-| Trip (daily program, morning hype, reminders) | December (exact dates TBD) |
+| WhatsApp go / no-go gate (Meta setup working, or flip to Telegram) | Oct 31 |
+| Share with La Familia Luna, start collecting sponsored activities | ~Nov 14–17 |
+| Calendar "filling up" phase (sponsor + sign up) | Nov 17 – Dec 25 |
+| Feature freeze (Christmas week is not debugging week) | Dec 19 |
+| **The cruise: Acapulco, Dec 26 – Jan 2** (8 days, 7 nights) | Dec 26 – Jan 2 |
+
+**Director:** *Capitán Lunático*, at the service of La Familia Luna.
 
 ---
 
@@ -57,8 +61,8 @@ however, the piece that makes this feel like a cruise-room TV, so it stays in sc
 
 ### 2.3 The personality
 
-Cruise Director with a name the family picks (candidates: *Capitán Lunático*, *Director
-Marisol*, *El Comodoro*). Bilingual Spanish/English, mirrors whoever is talking. Running gags:
+**Capitán Lunático**, Cruise Director of the Crucero Luna, serving La Familia Luna (the
+name is the first running gag: he is lunatic about the Luna family). Bilingual Spanish/English, mirrors whoever is talking. Running gags:
 the apartment is "the ship" (balcony = Lido Deck, kitchen = Galley, the elevator = "the
 tender"), fake ship announcements ("*ding-dong* Attention passengers…"), ranks awarded for
 participation ("Sofia has been promoted to Yoga Admiral"). Rules: never mean, never jokes
@@ -66,6 +70,16 @@ participation ("Sofia has been promoted to Yoga Admiral"). Rules: never mean, ne
 morning message, always useful first (time, place, who's hosting), then funny.
 
 Draft system prompt: `docs/persona.md`.
+
+### 2.4 Built-in set pieces for Dec 26 – Jan 2
+
+| Day | Set piece the Capitán pushes if nobody sponsors it |
+|---|---|
+| Dec 26 | Embarkation Day: muster drill (apartment tour as a safety briefing), welcome cocktail on the Lido Deck |
+| Dec 28 | Día de los Inocentes: the Capitán's one licensed prank day (fake program, reversed names), revealed by noon |
+| Dec 31 | Gala Night: costume dinner, awards ceremony from participation data, countdown on the Bridge (TV mode) |
+| Jan 1 | Recovery brunch at a humane hour; the morning message arrives late and whispers |
+| Jan 2 | Disembarkation: group photo, "cruise memories" recap video/collage, luggage-tag jokes |
 
 ---
 
@@ -139,31 +153,74 @@ memory        person_id, key, value   (e.g. "hates early mornings", "vegetarian"
 `schedule_reminder(...)`, `remember(person, key, value)`, `get_weather(date)`.
 Strict JSON schemas (`strict: true`) so sign-ups never land on the wrong activity.
 
-### 3.4 Channel notes you need to know up front
+### 3.4 WhatsApp without the pain: how templates actually work for us
 
-- **WhatsApp Cloud API realities.** You need a Meta Business account, a dedicated phone
-  number that has never been on WhatsApp (a cheap SIM or a virtual number works), and
-  business verification. Business-initiated messages outside a 24-hour window (the morning
-  message!) must use **pre-approved message templates**; replies inside 24 h are free-form.
-  Interactive buttons/lists are perfect for "Sign up / Maybe / Pass". **Start the Meta setup
-  this week**: verification can take days to weeks, and template approval another day or two.
-- **Group chats.** The Cloud API cannot post into a normal WhatsApp group as a bot. Options:
-  (a) the Director DMs everyone and the human group stays human (recommended; the Director
-  can still send one "Daily Program" to each person), (b) you forward the daily flyer to the
-  family group yourself, (c) use a broadcast list. Design assumes (a).
-- **Telegram** supports bots in groups natively and needs no verification, which is why it
-  is the fallback, not the first choice.
-- **Consent.** Everyone opts in by sending the first message ("Hola capitán") and can say
+The fear is "every message needs Meta approval". That is not how the platform works, and the
+design below needs **three templates in total**, not one per message.
+
+**The rule.** Whenever a person sends the Capitán anything (text, a button tap, a voice note),
+a **24-hour window** opens in which the Capitán may send them unlimited **free-form**
+messages: jokes, flyers, interactive buttons, voice notes, whatever. Only a message the
+Capitán sends *first*, with no user message in the previous 24 h, must be a pre-approved
+**template**. Templates have variables (`{{1}}`, `{{2}}`), so one template covers every day.
+
+**The design.** The only business-initiated message in the whole product is the morning
+knock, and it is a short template whose job is to get a tap:
+
+```
+🚢 ¡Buenos días, {{1}}! Hoy en el Crucero Luna: {{2}}.
+Tienes {{3}} actividad(es) en tu agenda. ¿Vemos el programa?
+[Ver mi día]  [Sorpréndeme]  [Hoy no, Capitán]
+```
+
+Any tap counts as a user message and opens the window, so the *real* morning message, with
+the full personality, flyer and sign-up buttons, goes out free-form a second later. Someone
+who replied to the Capitán yesterday afternoon never even sees the template path; they get the
+full message directly. Reminders almost always fall inside an open window (the person signed
+up, so they talked to the Capitán); a second template `activity_reminder` covers the rare case
+where they did not, and a third, `new_activity`, announces a freshly sponsored event to people
+who have been quiet for a day. Template bodies must be compact (no line breaks inside
+variables, not mostly variables), which is why the template is a knock and not the show.
+
+**"We are not a business."** You do not need Meta **business verification** for this. An
+unverified Meta Business portfolio can run the Cloud API with a messaging limit of a few
+hundred business-initiated conversations per day, far above one family. What you do need:
+a Meta Business portfolio (anyone can create one, you register as yourself), a developer app,
+a payment method on file for per-message template fees (replies inside the window are free),
+and a **phone number that has never been on WhatsApp** (cheap SIM or virtual number). Utility
+templates like the three above usually clear review within minutes to a day; the slow part,
+if any, is Meta's account checks, which is why the gate is Oct 31. Twilio's WhatsApp sandbox
+is a fine way to develop before the number is live; production still runs on the same Meta
+rules.
+
+**Other realities.**
+- The Cloud API cannot join a normal WhatsApp group. The Capitán talks 1:1 and the family
+  group stays human. If you want the daily flyer in the group, forward it yourself (30
+  seconds) or let the Capitán's web program page be the shared view.
+- Do **not** use unofficial WhatsApp Web automation libraries to get group posting. They work
+  until Meta bans the number, which it tends to do at the worst possible moment.
+- **Consent:** everyone opts in by sending the first message ("Hola Capitán") and can say
   "stop" / "menos chistes" / "solo recordatorios" any time; the agent has a tool for that.
+
+**Plan B: Telegram (decided at the Oct 31 gate).** A Telegram bot needs no approval, no
+templates, no business account, can live *inside* the family group, supports buttons, voice
+notes and round "video notes" (a very cruise-TV way to deliver the morning hype), and is
+free. The cost is asking every relative to install one more app for the trip. Everything
+above WhatsApp in the architecture is channel-agnostic, so flipping is about a day of
+adapter work, not a rewrite.
 
 ---
 
 ## 4. Phased plan
 
 ### Phase 0 — Decisions & accounts (this week, Oct 17–24)
-- [ ] Pick the Director's name, language default, trip dates, apartment "deck map".
-- [ ] Buy/assign a phone number; create Meta Business + WhatsApp Cloud API app; submit
-      verification; draft templates (`daily_program`, `activity_reminder`, `new_activity`).
+- [x] Director's name (Capitán Lunático) and trip dates (Dec 26 – Jan 2). Still open:
+      language default, apartment "deck map".
+- [ ] Buy/assign a phone number; create a Meta Business portfolio + WhatsApp Cloud API app
+      (no business verification needed); submit the three templates (`morning_knock`,
+      `activity_reminder`, `new_activity`).
+- [ ] **Oct 31 gate:** test template delivered to your own phone from the real number, or
+      flip the primary channel to Telegram.
 - [ ] Create Supabase project, Anthropic API key with a monthly spend cap, image-gen key,
       ElevenLabs key. Vercel + Fly.io accounts.
 - [ ] Repo scaffolding (monorepo: `apps/web`, `apps/worker`, `packages/agent`, `packages/db`).
@@ -237,14 +294,14 @@ Deliverable: you and two testers can sponsor, sign up, get the morning message, 
 
 ## 7. Open decisions for you
 
-1. Director's name and default language (assumption in the persona draft: Spanish first, English mirrored).
-2. Exact trip dates and the family roster size (drives the message budget and avatar budget).
-3. WhatsApp number source (new SIM vs. virtual number) and who owns the Meta Business account.
-4. Avatar vendor appetite: "wow factor at any cost" vs. "nice if it works" (affects how much of Phase 3 to commit to).
-5. Whether the human family WhatsApp group stays human-only (recommended) or you want the Director's daily flyer forwarded there by you.
+1. Default language (assumption in the persona draft: Spanish first, English mirrored) and the family roster size.
+2. WhatsApp number source (new SIM vs. virtual number) and who owns the Meta Business portfolio.
+3. Avatar vendor appetite: "wow factor at any cost" vs. "nice if it works" (affects how much of Phase 3 to commit to).
+4. Whether the human family WhatsApp group stays human-only (recommended) or you forward the Capitán's daily flyer there.
+5. If Meta is not working by Oct 31: Telegram for everyone, or WhatsApp-only-for-you plus Telegram for the rest? (The plan assumes one channel for all.)
 
 ## 8. Immediate next steps (what I'd do first if you say go)
 
 1. Scaffold the monorepo (TypeScript, Next.js, Supabase, worker) with the schema in §3.2.
-2. Implement the agent package with the persona in `docs/persona.md`, the tools in §3.3, and a CLI harness so you can chat with the Director locally before any channel exists.
+2. Implement the agent package with the persona in `docs/persona.md`, the tools in §3.3, and a CLI harness so you can chat with the Capitán locally before any channel exists.
 3. Build the eval set and the morning-message generator next, then the WhatsApp adapter once Meta approves the number.
