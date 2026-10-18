@@ -14,7 +14,8 @@
     "chat": "tsx apps/cli/src/chat.ts",
     "morning": "tsx apps/cli/src/morning.ts",
     "eval": "tsx evals/run.ts",
-    "server": "tsx apps/server/src/main.ts"
+    "server": "tsx apps/server/src/main.ts",
+    "db:migrate": "tsx packages/db/src/migrate.ts"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

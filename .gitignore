@@ -7,3 +7,4 @@ dist/
 .data/
 evals/results/
 .DS_Store
+.fly/

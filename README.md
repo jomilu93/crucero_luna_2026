@@ -50,8 +50,13 @@ pnpm server                                    # webhook + calendar feeds + sche
 4. Each tester sends the sandbox join code once, then "Hola Capitán". Unknown numbers are boarded
    automatically using their WhatsApp profile name; the Capitán confirms name and language.
 
-With `DATABASE_URL` set the server uses Postgres (apply `packages/db/sql/001_init.sql` first); otherwise
-it uses the JSON dev store.
+With `DATABASE_URL` set the server uses Postgres (run `pnpm db:migrate` once); otherwise it uses the JSON dev store.
+
+### Deploying
+
+`Dockerfile` + `fly.toml` run the server as one always-on machine: `fly launch --no-deploy --copy-config`,
+`fly secrets set ANTHROPIC_API_KEY=… DATABASE_URL=… TWILIO_ACCOUNT_SID=… TWILIO_API_KEY_SID=… TWILIO_API_KEY_SECRET=… TWILIO_AUTH_TOKEN=… TWILIO_WHATSAPP_FROM=…`,
+then `fly deploy`. Point the Twilio webhook at `https://<app>.fly.dev/webhooks/twilio`.
 
 `--at` is a UTC instant; the ship runs on America/Mexico_City, which is UTC-6 with no DST.
 Set `CRUCERO_DATA_FILE=.data/crucero.json` in `.env` to persist sign-ups between runs
