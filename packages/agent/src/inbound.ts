@@ -1,6 +1,6 @@
 import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { type Person, type Store, shipDate } from "@crucero/db";
-import type { Outbox } from "./tools.js";
+import { SIGNUP_BUTTON_PREFIX, deliverMorningFull, type TemplateOutbox } from "./scheduler.js";
 
 /** What the ChatService needs from the Capitán; `Director` satisfies this. */
 export interface Responder {
@@ -39,10 +39,7 @@ export const MORNING_BUTTONS = {
   skip: "hoy_no",
 } as const;
 
-export interface MorningPayload {
-  full_message: string;
-  offered_activity_ids: string[];
-}
+export type { MorningPayloadData as MorningPayload } from "./scheduler.js";
 
 /**
  * Trim history from the front without orphaning tool results: the first message must be a
@@ -68,7 +65,7 @@ export class ChatService {
   constructor(
     private readonly store: Store,
     private readonly responder: Responder,
-    private readonly outbox: Outbox,
+    private readonly outbox: TemplateOutbox,
     opts: ChatServiceOptions = {},
   ) {
     this.staleAfterMs = opts.staleAfterMs ?? 12 * 3600 * 1000;
@@ -94,8 +91,7 @@ export class ChatService {
     const key = `${person.id}:${today}`;
     const knock = await this.store.getDelivery("morning", key);
     if (!knock?.payload || (await this.store.wasDelivered("morning_full", key))) return false;
-    const payload = knock.payload as MorningPayload;
-    await this.outbox.send(person, payload.full_message, { from: person });
+    await deliverMorningFull(this.store, this.outbox, person, knock.payload as { full_message: string; offered_activity_ids: string[] });
     await this.store.markDelivered("morning_full", key);
     return true;
   }
@@ -121,6 +117,13 @@ export class ChatService {
       return { person, releasedMorning: false };
     }
 
+    // One-tap sign-up buttons go through the Capitán so the reply keeps his voice.
+    let text = msg.text;
+    if (payload?.startsWith(SIGNUP_BUTTON_PREFIX)) {
+      const id = payload.slice(SIGNUP_BUTTON_PREFIX.length);
+      text = person.language === "es" ? `[Botón] Apúntame a la actividad ${id}.` : `[Button] Sign me up for activity ${id}.`;
+    }
+
     // Any real message also opens the window: release the morning show first if it is waiting.
     const releasedMorning = await this.releasePendingMorning(person);
 
@@ -128,7 +131,7 @@ export class ChatService {
     const stale = !saved || this.now().getTime() - new Date(saved.updatedAt).getTime() > this.staleAfterMs;
     const history = stale ? [] : trimHistory(saved!.history as BetaMessageParam[], this.maxHistory);
 
-    const text = msg.mediaUrl && !msg.text ? "[El pasajero envió una imagen sin texto]" : msg.text;
+    if (msg.mediaUrl && !text) text = "[El pasajero envió una imagen sin texto]";
     const turn = await this.responder.respond(person, text, history, { channel });
     await this.store.saveConversation(person.id, trimHistory(turn.history, this.maxHistory));
     if (turn.text) await this.outbox.send(person, turn.text, { from: person });

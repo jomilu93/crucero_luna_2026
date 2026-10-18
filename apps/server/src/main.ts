@@ -11,6 +11,7 @@ import postgres from "postgres";
 import { ChatService, Director, buildMorningBrief, tick, writeMorningMessage, type TemplateOutbox } from "@crucero/agent";
 import { MemoryStore, PgStore, fromPostgresJs, seedSample, type Store } from "@crucero/db";
 import { createRouter } from "./http.js";
+import { MetaWhatsAppOutbox } from "./meta.js";
 import { TwilioWhatsAppOutbox } from "./twilio.js";
 
 const env = process.env;
@@ -28,9 +29,26 @@ if (env.DATABASE_URL) {
   log(`store: json file (${env.CRUCERO_DATA_FILE || ".data/crucero.json"}) — dev only`);
 }
 
-// Outbox
+// Outbox: Meta Cloud API direct (preferred), Twilio, or the console.
 let outbox: TemplateOutbox;
-if (env.TWILIO_ACCOUNT_SID && env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRET && env.TWILIO_WHATSAPP_FROM) {
+if (env.META_ACCESS_TOKEN && env.META_PHONE_NUMBER_ID) {
+  outbox = new MetaWhatsAppOutbox(
+    {
+      accessToken: env.META_ACCESS_TOKEN,
+      phoneNumberId: env.META_PHONE_NUMBER_ID,
+      appSecret: env.META_APP_SECRET,
+      graphVersion: env.META_GRAPH_VERSION || undefined,
+      templateLanguage: env.META_TEMPLATE_LANG || undefined,
+      templates: {
+        morning_knock: env.META_TEMPLATE_MORNING_KNOCK || undefined,
+        activity_reminder: env.META_TEMPLATE_REMINDER || undefined,
+        new_activity: env.META_TEMPLATE_NEW_ACTIVITY || undefined,
+      },
+    },
+    () => store.listPeople(),
+  );
+  log(`outbox: meta cloud api (phone number id ${env.META_PHONE_NUMBER_ID})`);
+} else if (env.TWILIO_ACCOUNT_SID && env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRET && env.TWILIO_WHATSAPP_FROM) {
   outbox = new TwilioWhatsAppOutbox(
     {
       accountSid: env.TWILIO_ACCOUNT_SID,
@@ -51,7 +69,7 @@ if (env.TWILIO_ACCOUNT_SID && env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRE
   outbox = {
     send: async (to, text) => log(`[console outbox] → ${to === "everyone" ? "EVERYONE" : to.name}: ${text.replace(/\n/g, " ⏎ ").slice(0, 160)}`),
   };
-  log("outbox: console (set TWILIO_* to send real messages)");
+  log("outbox: console (set META_* or TWILIO_* to send real messages)");
 }
 
 // Brain
@@ -61,8 +79,10 @@ const chat = new ChatService(store, director, outbox);
 
 // HTTP
 const publicUrl = env.PUBLIC_URL ?? `http://localhost:${env.PORT ?? 8080}`;
-const server = createServer(createRouter({ store, chat, publicUrl, twilioAuthToken: env.TWILIO_AUTH_TOKEN, log }));
-server.listen(Number(env.PORT ?? 8080), () => log(`listening on ${publicUrl} (webhook: ${publicUrl}/webhooks/twilio)`));
+const server = createServer(
+  createRouter({ store, chat, publicUrl, twilioAuthToken: env.TWILIO_AUTH_TOKEN, metaVerifyToken: env.META_VERIFY_TOKEN, metaAppSecret: env.META_APP_SECRET, log }),
+);
+server.listen(Number(env.PORT ?? 8080), () => log(`listening on ${publicUrl} (webhooks: ${publicUrl}/webhooks/meta, ${publicUrl}/webhooks/twilio)`));
 
 // Scheduler: every minute, idempotent.
 const useTemplates = (env.WHATSAPP_TEMPLATES ?? "off") === "on";

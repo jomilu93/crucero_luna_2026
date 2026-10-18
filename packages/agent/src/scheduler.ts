@@ -7,6 +7,35 @@ export type TemplateKind = "morning_knock" | "activity_reminder" | "new_activity
 /** Outbox that can also send a WhatsApp template (needed outside the 24-hour window). */
 export interface TemplateOutbox extends Outbox {
   sendTemplate?(to: Person, kind: TemplateKind, variables: Record<string, string>): Promise<void>;
+  /** Quick-reply buttons (max 3) under a short body; only valid inside an open 24h window. */
+  sendInteractive?(to: Person, body: string, buttons: { id: string; title: string }[]): Promise<void>;
+}
+
+/** Payload parked behind the morning template knock. */
+export interface MorningPayloadData {
+  full_message: string;
+  offered_activity_ids: string[];
+}
+
+/** Button id prefix for one-tap sign-ups offered in the morning message. */
+export const SIGNUP_BUTTON_PREFIX = "signup:";
+
+/**
+ * Send the full morning show: the message, then (when the channel supports it) one-tap
+ * sign-up buttons for the activities it offered.
+ */
+export async function deliverMorningFull(store: Store, outbox: TemplateOutbox, person: Person, payload: MorningPayloadData): Promise<void> {
+  await outbox.send(person, payload.full_message, { from: person });
+  if (outbox.sendInteractive && payload.offered_activity_ids.length) {
+    const acts = (await Promise.all(payload.offered_activity_ids.slice(0, 3).map((id) => store.getActivity(id)))).filter((a): a is Activity => !!a && a.status === "published");
+    if (acts.length) {
+      await outbox.sendInteractive(
+        person,
+        person.language === "es" ? "¿Te apunto a alguna?" : "Want me to sign you up?",
+        acts.map((a) => ({ id: `${SIGNUP_BUTTON_PREFIX}${a.id}`, title: `${a.emoji} ${a.title}` })),
+      );
+    }
+  }
 }
 
 export interface SchedulerDeps {
@@ -106,7 +135,7 @@ export async function tick(deps: SchedulerDeps, now: Date): Promise<TickReport> 
         });
         await store.markDelivered("morning", key, { full_message: msg.full_message, offered_activity_ids: msg.offered_activity_ids });
       } else {
-        await outbox.send(person, msg.full_message, { from: person });
+        await deliverMorningFull(store, outbox, person, { full_message: msg.full_message, offered_activity_ids: msg.offered_activity_ids });
         await store.markDelivered("morning", key, { full_message: msg.full_message, offered_activity_ids: msg.offered_activity_ids });
         await store.markDelivered("morning_full", key);
       }

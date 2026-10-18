@@ -14,7 +14,7 @@ The full build plan is in [`PLAN.md`](PLAN.md); the persona is in [`docs/persona
 | `packages/db` | Domain types, the `Store` contract, an in-memory/JSON `MemoryStore` for dev, ship-clock helpers (fixed UTC-6), a sample roster + program, and the Postgres schema (`sql/001_init.sql`) for Supabase |
 | `packages/agent` | The Capitán: cached persona prefix, per-passenger context, 14 tools (program, sign-ups, sponsoring, reminders, memory, preferences, flyers, weather), the `Director` class on the Anthropic Tool Runner, and the morning-program generator with structured output |
 | `apps/cli` | `pnpm chat`: talk to the Capitán as any passenger at any ship time. `pnpm morning`: generate everyone's morning program for a date |
-| `apps/server` | The ship's one process: Twilio WhatsApp webhook (signature-validated, acks fast, replies via REST), per-passenger calendar feeds (`/cal/<token>.ics`), and the minute scheduler (morning program, T-30 reminders with guardian routing, T-60 sponsor nudges) |
+| `apps/server` | The ship's one process: WhatsApp webhooks for **Meta Cloud API direct** (preferred) and Twilio (alternative), both signature-validated, acking fast and replying asynchronously; per-passenger calendar feeds (`/cal/<token>.ics`); the minute scheduler (morning program, T-30 reminders with guardian routing, T-60 sponsor nudges) |
 | `evals` | 40 realistic WhatsApp-style messages (Spanish, English, Spanglish, typos, kids, edge cases) with expected tool behavior, plus an optional tone judge |
 
 Also in `packages/db`: `PgStore`, the production store on Postgres, tested against a real in-process Postgres (PGlite).
@@ -39,7 +39,29 @@ pnpm eval                                      # behavioral eval; add --judge fo
 pnpm server                                    # webhook + calendar feeds + scheduler (console outbox until TWILIO_* is set)
 ```
 
-### Running the ship against the Twilio sandbox
+### Running the ship on Meta's Cloud API (recommended)
+
+Meta's free **test number** lets up to five verified phones talk to the Capitán before any real number exists.
+
+1. At developers.facebook.com create an app (type Business), add the **WhatsApp** product, and pick or create
+   the Business portfolio ("Crucero Luna"). The **API Setup** page shows a test number, its **Phone Number ID**,
+   and a temporary 24-hour **access token**. Add your pilot testers under "To" as recipients (each confirms a code).
+2. Put `META_PHONE_NUMBER_ID`, `META_ACCESS_TOKEN`, `META_APP_SECRET` (App settings → Basic) and a
+   `META_VERIFY_TOKEN` of your choosing in `.env`. Keep `WHATSAPP_TEMPLATES=off` until you have approved templates.
+3. `pnpm server`, expose port 8080 with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8080`) and set
+   `PUBLIC_URL` to it. In the app's WhatsApp → **Configuration** page set the callback URL to
+   `<PUBLIC_URL>/webhooks/meta` with your verify token, then subscribe to the **messages** field.
+4. Testers send "Hola Capitán". Unknown numbers are boarded from their WhatsApp profile name.
+
+For production: create a **System User** in Business settings with the WhatsApp permissions, generate a permanent
+token and replace `META_ACCESS_TOKEN`; add the real number under Phone numbers (it must never have been on
+WhatsApp; the SMS/voice code arrives on it); submit the three templates (`morning_knock` with three quick-reply
+buttons, `activity_reminder`, `new_activity`) under Message templates and put their names in `META_TEMPLATE_*`,
+then set `WHATSAPP_TEMPLATES=on`.
+
+Inbound voice notes are acknowledged but not transcribed yet (Phase 2).
+
+### Running the ship against the Twilio sandbox (alternative)
 
 1. Fill `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, `TWILIO_AUTH_TOKEN` and
    `TWILIO_WHATSAPP_FROM=whatsapp:+14155238886` in `.env`; keep `WHATSAPP_TEMPLATES=off` (the sandbox
@@ -55,8 +77,8 @@ With `DATABASE_URL` set the server uses Postgres (run `pnpm db:migrate` once); o
 ### Deploying
 
 `Dockerfile` + `fly.toml` run the server as one always-on machine: `fly launch --no-deploy --copy-config`,
-`fly secrets set ANTHROPIC_API_KEY=… DATABASE_URL=… TWILIO_ACCOUNT_SID=… TWILIO_API_KEY_SID=… TWILIO_API_KEY_SECRET=… TWILIO_AUTH_TOKEN=… TWILIO_WHATSAPP_FROM=…`,
-then `fly deploy`. Point the Twilio webhook at `https://<app>.fly.dev/webhooks/twilio`.
+`fly secrets set ANTHROPIC_API_KEY=… DATABASE_URL=… META_ACCESS_TOKEN=… META_PHONE_NUMBER_ID=… META_APP_SECRET=… META_VERIFY_TOKEN=…`,
+then `fly deploy`. Point the Meta webhook at `https://<app>.fly.dev/webhooks/meta` (or Twilio's at `/webhooks/twilio`).
 
 `--at` is a UTC instant; the ship runs on America/Mexico_City, which is UTC-6 with no DST.
 Set `CRUCERO_DATA_FILE=.data/crucero.json` in `.env` to persist sign-ups between runs
@@ -82,7 +104,9 @@ what the Capitán currently sees about you and today, `/reset` clears the conver
 - **Templates and the 24-hour window.** With `WHATSAPP_TEMPLATES=on`, the scheduler sends the short
   `morning_knock` template and parks the full message in the `delivery` table; the first button tap or
   message from that passenger releases it (no model call for taps). `hoy_no` suppresses it for the day.
-  Reminders and nudges go as free-form text, which is fine inside an open window.
+  Reminders and nudges go as free-form text, which is fine inside an open window. On Meta, the full
+  morning message is followed by up to three one-tap sign-up buttons; a tap becomes a request to the
+  Capitán so the confirmation keeps his voice.
 - **Scheduler** runs every minute and is idempotent: one morning per person per ship day (from wake
   time until three hours later, 10:00 at the earliest on Jan 1), one reminder per sign-up, one nudge
   per activity, quiet hours respected, kids' reminders mirrored to their guardian.
@@ -96,6 +120,6 @@ packages/db/sql       001_init.sql
 packages/agent/src    persona · context · tools · director · morning (+ tests)
 packages/agent/src    inbound (ChatService) · scheduler (tick) · ics (+ tests)
 apps/cli/src          chat.ts · morning.ts · shared.ts
-apps/server/src       main.ts · http.ts · twilio.ts (+ tests)
+apps/server/src       main.ts · http.ts · meta.ts · twilio.ts (+ tests)
 evals                 cases.json · run.ts
 ```

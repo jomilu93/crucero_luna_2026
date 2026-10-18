@@ -183,6 +183,11 @@ where they did not, and a third, `new_activity`, announces a freshly sponsored e
 who have been quiet for a day. Template bodies must be compact (no line breaks inside
 variables, not mostly variables), which is why the template is a knock and not the show.
 
+**Provider decision (Oct 18): Meta Cloud API direct, no reseller.** Twilio's WhatsApp onboarding proved
+painful, so the Capitán talks to Meta's API himself. Meta's free test number (up to 5 verified phones) runs
+the pilot immediately; the real number is added in the same console when it verifies. The Twilio adapter
+stays in the repo as an alternative behind the same interface.
+
 **"We are not a business."** You do not need Meta **business verification** for this. An
 unverified Meta Business portfolio can run the Cloud API with a messaging limit of a few
 hundred business-initiated conversations per day, far above one family. What you do need:
@@ -247,9 +252,8 @@ number recently deleted from WhatsApp can trigger a cooldown of up to 24 hours.
 ### Phase 0 — Decisions & accounts (this week, Oct 17–24)
 - [x] Director's name (Capitán Lunático) and trip dates (Dec 26 – Jan 2). Still open:
       language default, apartment "deck map".
-- [ ] Buy a Twilio US local number (see §3.5); create a Meta Business portfolio + WhatsApp Cloud API app
-      (no business verification needed); submit the three templates (`morning_knock`,
-      `activity_reminder`, `new_activity`).
+- [x] Phone number bought (Twilio US local; reusable as the Meta number once any Twilio WhatsApp sender registration on it is removed).
+- [ ] Meta for Developers app + Business portfolio "Crucero Luna"; test number working with 5 pilot phones; System User permanent token; real number added; the three templates submitted (`morning_knock` with 3 quick-reply buttons, `activity_reminder`, `new_activity`).
 - [ ] **Oct 31 gate:** test template delivered to your own phone from the real number, or
       flip the primary channel to Telegram.
 - [ ] Create Supabase project, Anthropic API key with a monthly spend cap, image-gen key,
@@ -260,7 +264,7 @@ number recently deleted from WhatsApp can trigger a cooldown of up to 24 hours.
 Deliverable: you and two testers can sponsor, sign up, get the morning message, see TV mode.
 - [x] Postgres schema (`packages/db/sql/001_init.sql`), `Store` contract, dev `MemoryStore`, sample week seeded, `PgStore` tested on PGlite.
 - [x] Agent core: persona prompt, 14 tools, Tool Runner loop, per-person memory, message log, local CLI harness (`pnpm chat`).
-- [x] WhatsApp webhook (inbound text, buttons, media) + outbound (text, media, templates via Content SIDs) through Twilio; onboarding of unknown numbers; per-passenger conversation history. [ ] Live test on the sandbox once the Twilio keys land.
+- [x] WhatsApp webhook (inbound text, buttons, media, voice-note acknowledgement) + outbound (text, media, interactive buttons, templates) through **Meta Cloud API direct**, with Twilio as the alternative adapter; onboarding of unknown numbers; per-passenger conversation history; webhook retry de-duplication. [ ] Live test on the Meta test number once the keys land.
 - Web app: program view, activity page, sponsor form, "my cruise", magic-link login.
 - TV mode route: today's program, "now / next" with countdown, QR codes to sign up, rotating
   flyers, auto-refresh via Supabase realtime.
