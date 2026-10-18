@@ -1,5 +1,7 @@
 import type {
   Activity,
+  Conversation,
+  Delivery,
   MemoryEntry,
   MessageLog,
   NewActivity,
@@ -52,4 +54,14 @@ export interface Store {
   // Log
   logMessage(entry: Omit<MessageLog, "id" | "ts"> & { ts?: string }): Promise<MessageLog>;
   listMessages(personId: string, limit?: number): Promise<MessageLog[]>;
+
+  // Conversations (chat history per passenger)
+  getConversation(personId: string): Promise<Conversation | undefined>;
+  saveConversation(personId: string, history: unknown[]): Promise<Conversation>;
+  clearConversation(personId: string): Promise<void>;
+
+  // Scheduled-send idempotency
+  wasDelivered(kind: Delivery["kind"], key: string): Promise<boolean>;
+  getDelivery(kind: Delivery["kind"], key: string): Promise<Delivery | undefined>;
+  markDelivered(kind: Delivery["kind"], key: string, payload?: unknown): Promise<Delivery>;
 }

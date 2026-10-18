@@ -1,7 +1,13 @@
 -- Crucero Luna 2026 · Postgres schema (Supabase). Mirrors packages/db/src/types.ts.
 -- All timestamps are timestamptz (UTC); the ship's clock is America/Mexico_City (fixed UTC-6).
 
-create extension if not exists pgcrypto;
+-- gen_random_uuid() is core Postgres (13+); no extensions needed, so the schema also runs on PGlite in tests.
+
+-- Accent-insensitive matching for passenger names without the unaccent extension
+-- (Supabase has it, PGlite in tests does not).
+create or replace function unaccent_lite(t text) returns text language sql immutable as $$
+  select translate(t, 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN')
+$$;
 
 create type language as enum ('es', 'en');
 create type person_role as enum ('adult', 'kid');
@@ -22,7 +28,7 @@ create table person (
   quiet_start   time,
   quiet_end     time,
   wake_time     time not null default '07:30',
-  ics_token     text not null unique default encode(gen_random_bytes(12), 'base64'),
+  ics_token     text not null unique default substr(md5(random()::text || clock_timestamp()::text), 1, 20),
   joined_at     timestamptz not null default now(),
   preferences   jsonb not null default '{}'::jsonb
 );
@@ -75,6 +81,22 @@ create table message_log (
   ts          timestamptz not null default now()
 );
 create index message_log_person_ts_idx on message_log (person_id, ts desc);
+
+-- Chat history per passenger (Anthropic message params as JSON), so WhatsApp turns continue.
+create table conversation (
+  person_id   uuid primary key references person(id) on delete cascade,
+  history     jsonb not null default '[]'::jsonb,
+  updated_at  timestamptz not null default now()
+);
+
+-- Idempotency for scheduled sends (morning program, reminders, nudges).
+create table delivery (
+  kind     text not null check (kind in ('morning', 'morning_full', 'reminder', 'sponsor_nudge', 'announcement')),
+  key      text not null,
+  sent_at  timestamptz not null default now(),
+  payload  jsonb,
+  primary key (kind, key)
+);
 
 -- Reminder sweep: every (activity, person) going/maybe pair whose T-30 has arrived and is unsent.
 create view due_reminders as

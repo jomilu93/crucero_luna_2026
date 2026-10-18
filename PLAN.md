@@ -258,18 +258,18 @@ number recently deleted from WhatsApp can trigger a cooldown of up to 24 hours.
 
 ### Phase 1 — The cruise exists (Oct 24 – Nov 7)
 Deliverable: you and two testers can sponsor, sign up, get the morning message, see TV mode.
-- [x] Postgres schema (`packages/db/sql/001_init.sql`), `Store` contract, dev `MemoryStore`, sample week seeded. [ ] Postgres `Store` implementation.
+- [x] Postgres schema (`packages/db/sql/001_init.sql`), `Store` contract, dev `MemoryStore`, sample week seeded, `PgStore` tested on PGlite.
 - [x] Agent core: persona prompt, 14 tools, Tool Runner loop, per-person memory, message log, local CLI harness (`pnpm chat`).
-- WhatsApp webhook (inbound text, buttons) + outbound (text, image, interactive, templates).
+- [x] WhatsApp webhook (inbound text, buttons, media) + outbound (text, media, templates via Content SIDs) through Twilio; onboarding of unknown numbers; per-passenger conversation history. [ ] Live test on the sandbox once the Twilio keys land.
 - Web app: program view, activity page, sponsor form, "my cruise", magic-link login.
 - TV mode route: today's program, "now / next" with countdown, QR codes to sign up, rotating
   flyers, auto-refresh via Supabase realtime.
-- Scheduler: morning run per person, reminder sweep, ICS feed per person.
+- [x] Scheduler: morning run per person (template knock + parked full message), T-30 reminder sweep with guardian routing, T-60 sponsor nudges, ICS feed per person (`/cal/<token>.ics`). [ ] Deploy (Fly.io) + Supabase.
 - Flyer generator v1 (image model + overlaid text, 3 templates: Fiesta, Zen, Retro Cruise).
 - [x] Eval set: 40 realistic WhatsApp messages (Spanglish, typos, kids, "cancel yoga", "who's
   going to bingo") with expected tool calls (`pnpm eval`); run it on every persona/prompt change.
 - [x] Morning-program generator (deterministic brief + structured output: template knock line,
-  full message, button ids). [ ] Hook it to the scheduler.
+  full message, button ids), wired into the scheduler.
 
 ### Phase 2 — Delightful & robust (Nov 7 – Nov 17)
 - WhatsApp voice notes in both directions (STT → agent → TTS voice note).

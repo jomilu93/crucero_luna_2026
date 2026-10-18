@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 import type { ActivityQuery, Store } from "./store.js";
 import type {
   Activity,
+  Conversation,
+  Delivery,
   MemoryEntry,
   MessageLog,
   NewActivity,
@@ -19,9 +21,11 @@ interface Snapshot {
   signups: Signup[];
   memory: MemoryEntry[];
   messages: MessageLog[];
+  conversations: Conversation[];
+  deliveries: Delivery[];
 }
 
-const empty = (): Snapshot => ({ people: [], activities: [], signups: [], memory: [], messages: [] });
+const empty = (): Snapshot => ({ people: [], activities: [], signups: [], memory: [], messages: [], conversations: [], deliveries: [] });
 
 const normalize = (s: string) =>
   s
@@ -183,5 +187,42 @@ export class MemoryStore implements Store {
   }
   async listMessages(personId: string, limit = 50): Promise<MessageLog[]> {
     return this.data.messages.filter((m) => m.personId === personId).slice(-limit);
+  }
+
+  // Conversations
+  async getConversation(personId: string): Promise<Conversation | undefined> {
+    return this.data.conversations.find((c) => c.personId === personId);
+  }
+  async saveConversation(personId: string, history: unknown[]): Promise<Conversation> {
+    let c = this.data.conversations.find((x) => x.personId === personId);
+    if (c) {
+      c.history = history;
+      c.updatedAt = this.ts();
+    } else {
+      c = { personId, history, updatedAt: this.ts() };
+      this.data.conversations.push(c);
+    }
+    this.persist();
+    return c;
+  }
+  async clearConversation(personId: string): Promise<void> {
+    this.data.conversations = this.data.conversations.filter((c) => c.personId !== personId);
+    this.persist();
+  }
+
+  // Deliveries
+  async wasDelivered(kind: Delivery["kind"], key: string): Promise<boolean> {
+    return this.data.deliveries.some((d) => d.kind === kind && d.key === key);
+  }
+  async getDelivery(kind: Delivery["kind"], key: string): Promise<Delivery | undefined> {
+    return this.data.deliveries.find((d) => d.kind === kind && d.key === key);
+  }
+  async markDelivered(kind: Delivery["kind"], key: string, payload?: unknown): Promise<Delivery> {
+    const existing = this.data.deliveries.find((d) => d.kind === kind && d.key === key);
+    if (existing) return existing;
+    const d: Delivery = { kind, key, sentAt: this.ts(), ...(payload !== undefined ? { payload } : {}) };
+    this.data.deliveries.push(d);
+    this.persist();
+    return d;
   }
 }

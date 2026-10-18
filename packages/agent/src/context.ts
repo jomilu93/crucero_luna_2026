@@ -46,12 +46,16 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
   const mine = new Set((await store.listSignupsForPerson(person.id)).filter((s) => s.status !== "out").map((s) => s.activityId));
   const memory = await store.getMemory(person.id);
   const guardian = person.guardianId ? await store.getPerson(person.guardianId) : undefined;
+  const isNew = now.getTime() - new Date(person.joinedAt).getTime() < 24 * 3600 * 1000 && memory.length === 0;
 
   const lines: string[] = [
     `# Current passenger`,
     `Name: ${person.name}${person.nickname ? ` (${person.nickname})` : ""} · id: ${person.id} · language: ${person.language} · role: ${person.role}${guardian ? ` (guardian: ${guardian.name}, id ${guardian.id})` : ""} · humor: ${person.humor}${person.quietHours ? ` · quiet hours: ${person.quietHours.start}–${person.quietHours.end}` : ""}`,
     `Ship time now: ${prettyDate(today, person.language)} ${shipTime(now)} (${today})`,
     headlineFor(today) ? `Today's headline: ${headlineFor(today)}` : "",
+    isNew
+      ? `\n# Onboarding\nThis passenger just boarded (their name came from their WhatsApp profile and may be wrong). In ONE short message: welcome them aboard, confirm what to call them, ask Spanish or English, and mention they can sponsor an activity or sign up for one. Use set_preferences/remember for what they answer. Do not list the whole program yet.`
+      : "",
     "",
     `# Today's program (${todays.length} activities; ★ = this passenger is signed up or hosting)`,
     ...(await Promise.all(todays.map(async (a) => `${mine.has(a.id) || a.sponsorId === person.id ? "★ " : "  "}${await describeActivity(store, a, person.language)}`))),

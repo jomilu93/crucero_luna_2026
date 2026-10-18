@@ -70,6 +70,23 @@ export interface MessageLog {
   ts: string;
 }
 
+/** Persisted chat history per passenger so WhatsApp turns continue the same conversation. */
+export interface Conversation {
+  personId: string;
+  /** Anthropic message params (user/assistant turns incl. tool use). Opaque to the store. */
+  history: unknown[];
+  updatedAt: string;
+}
+
+/** Idempotency record for scheduled sends: one row per (kind, key), e.g. ("morning", "sofia:2026-12-28"). */
+export interface Delivery {
+  kind: "morning" | "morning_full" | "reminder" | "sponsor_nudge" | "announcement";
+  key: string;
+  sentAt: string;
+  /** Optional data for a follow-up step, e.g. the full morning message waiting behind the template knock. */
+  payload?: unknown;
+}
+
 export type NewActivity = Omit<Activity, "id" | "createdAt" | "status"> & { status?: ActivityStatus };
 export type NewPerson = Omit<Person, "id" | "icsToken" | "joinedAt" | "humor" | "wakeTime"> &
   Partial<Pick<Person, "humor" | "wakeTime">>;
