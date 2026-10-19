@@ -306,6 +306,7 @@ export function buildTools(ctx: ToolContext) {
         return `Sent to everyone.`;
       }
       const p = await resolvePerson(ctx, to);
+      if (p.muted) return `NOT SENT: ${p.name} asked the Capitán not to message them proactively. Suggest telling them in person.`;
       await ctx.outbox.send(p, text, { from: passenger });
       return `Sent to ${p.name}.`;
     }),
@@ -323,19 +324,21 @@ export function buildTools(ctx: ToolContext) {
 
   const set_preferences = betaZodTool({
     name: "set_preferences",
-    description: "Update the current passenger's settings: humor level ('full', 'light', 'off' = only logistics), language, quiet hours, morning message time.",
+    description: "Update the current passenger's settings: humor level ('full', 'light', 'off' = only logistics), language, quiet hours, morning message time, and muted (true = they asked for no proactive messages at all: no morning program, reminders or announcements; false = resume).",
     inputSchema: z.object({
       humor: z.enum(["full", "light", "off"]).optional(),
       language: z.enum(["es", "en"]).optional(),
       quiet_start: TIME.optional(),
       quiet_end: TIME.optional(),
       wake_time: TIME.optional(),
+      muted: z.boolean().optional(),
     }),
     run: wrap("set_preferences", async (i) => {
       const patch: Partial<Person> = {};
       if (i.humor) patch.humor = i.humor;
       if (i.language) patch.language = i.language;
       if (i.wake_time) patch.wakeTime = i.wake_time;
+      if (i.muted !== undefined) patch.muted = i.muted;
       if (i.quiet_start && i.quiet_end) patch.quietHours = { start: i.quiet_start, end: i.quiet_end };
       await store.updatePerson(passenger.id, patch);
       return `Preferences updated: ${json(patch)}.`;

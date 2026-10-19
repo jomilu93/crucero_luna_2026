@@ -150,7 +150,7 @@ export class MetaWhatsAppOutbox implements TemplateOutbox {
   }
 
   async send(to: Person | "everyone", text: string, opts?: { mediaUrl?: string }): Promise<void> {
-    const targets = to === "everyone" ? (await this.listPeople()).filter((p) => p.phoneE164) : [to];
+    const targets = to === "everyone" ? (await this.listPeople()).filter((p) => p.phoneE164 && !p.muted) : [to];
     for (const p of targets) {
       if (!p.phoneE164) continue;
       const wa = e164ToWaId(p.phoneE164);

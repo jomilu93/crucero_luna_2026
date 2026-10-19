@@ -67,7 +67,11 @@ async function runCase(c: Case) {
   if (c.setup?.fill_activity) {
     const a = (await store.getActivity(c.setup.fill_activity))!;
     const people = await store.listPeople();
-    for (const p of people.filter((p) => p.id !== c.as).slice(0, a.capacity ?? 8)) await store.setSignup(a.id, p.id, "going");
+    const fillers = people.filter((p) => p.id !== c.as).slice(0, a.capacity ?? 8);
+    for (const p of fillers) await store.setSignup(a.id, p.id, "going");
+    // The seed has fewer passengers than most capacities, so shrink the cap to make it truly full.
+    const going = (await store.listSignups(a.id)).filter((s) => s.status === "going").length;
+    await store.updateActivity(a.id, { capacity: going });
   }
   const sent: { to: string; text: string }[] = [];
   const outbox: Outbox = { send: async (to, text) => void sent.push({ to: to === "everyone" ? "everyone" : to.name, text }) };
@@ -106,7 +110,7 @@ async function runCase(c: Case) {
           context +
           "\n</chatbot_system_prompt>",
         output_config: { format: zodOutputFormat(Verdict) },
-        messages: [{ role: "user", content: `Passenger said: ${c.say}\n\n<reply>\n${turn.text}\n</reply>\n\n(Grader metadata, not part of the reply: tools called this turn: ${calls.map((k) => k.name).join(", ") || "none"})` }],
+        messages: [{ role: "user", content: `Passenger said: ${c.say}\n\n<reply>\n${turn.text}\n</reply>\n\n(Grader metadata, not part of the reply. Tools the chatbot called this turn and what they returned, which is also ground truth:\n${calls.map((k) => `- ${k.name} ${JSON.stringify(k.input)} → ${k.output.slice(0, 600)}`).join("\n") || "none"})` }],
       });
       verdict = res.parsed_output ?? undefined;
       if (verdict && !(verdict.in_character && verdict.useful_first && verdict.humor_rules_ok)) failures.push(`judge: ${verdict.notes}`);

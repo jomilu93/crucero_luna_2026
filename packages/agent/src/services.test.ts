@@ -195,6 +195,18 @@ describe("scheduler tick", () => {
     expect((await tick(deps, new Date(now.getTime() + 60_000))).sponsorNudges).toEqual([]);
   });
 
+  it("sends nothing proactive to muted passengers", async () => {
+    const morning = new Date(mx("2026-12-27", "07:30"));
+    const a = setup(morning);
+    await a.store.updatePerson("sofia", { muted: true });
+    expect((await tick(a.deps, morning)).mornings).not.toContain("sofia");
+    const nudge = new Date(mx("2026-12-27", "19:05"));
+    const b = setup(nudge);
+    await b.store.updatePerson("ricardo", { muted: true });
+    expect((await tick(b.deps, nudge)).sponsorNudges).toEqual([]);
+    expect(b.sent.find((s) => s.to === "ricardo")).toBeUndefined();
+  });
+
   it("reminder text is deterministic per activity+person", () => {
     const a = { id: "a04", emoji: "🎱", title: "Bingo", startsAt: mx("2026-12-27", "20:00"), location: "Salón" } as never;
     const p = { id: "carmen", language: "es", humor: "full" } as Person;

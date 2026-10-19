@@ -21,7 +21,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (70 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (72 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -30,8 +30,10 @@ CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live
 Done: plan, persona, db (+ Postgres schema), agent + 14 tools, CLI harness, morning generator, 40-case eval,
 ChatService (onboarding, history), scheduler (`tick`), ICS feeds, Meta + Twilio adapters, HTTP server,
 Dockerfile + fly.toml, CI.
-**Never yet run against a live model or a live WhatsApp number** — the first live eval and the first real
-message exchange are the next milestones.
+Live eval (CI `live-eval`, judge on): run 1 15/40 (judge schema crashes), run 2 32/40 after harness fixes and
+the "create clear sponsorships directly" persona rule. Run 3 adds a `muted` opt-out preference (migration
+`002_muted.sql`; scheduler, broadcasts and `send_message` skip muted passengers) and gives the judge tool outputs.
+**Never yet run against a live WhatsApp number**: the first real message exchange is the next milestone.
 
 ## Next steps, in order
 1. **Live eval**: with `ANTHROPIC_API_KEY` available, run `pnpm eval` (or trigger the CI `live-eval` job), read

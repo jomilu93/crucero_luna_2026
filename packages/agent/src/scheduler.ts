@@ -123,6 +123,7 @@ export async function tick(deps: SchedulerDeps, now: Date): Promise<TickReport> 
     if (nowHM < start || nowMinutes > endMinutes) continue;
     const key = `${person.id}:${today}`;
     if (await store.wasDelivered("morning", key)) continue;
+    if (person.muted) continue;
     if (person.role === "kid" && !person.phoneE164) continue; // kids without a phone get theirs via the guardian's message
     try {
       const msg = await deps.writeMorning(person, today, now);
@@ -158,9 +159,9 @@ export async function tick(deps: SchedulerDeps, now: Date): Promise<TickReport> 
       const minutes = Math.max(1, Math.round((new Date(a.startsAt).getTime() - now.getTime()) / 60000));
       try {
         const text = reminderText(a, host, person, minutes);
-        if (person.phoneE164) await outbox.send(person, text, { from: person });
+        if (person.phoneE164 && !person.muted) await outbox.send(person, text, { from: person });
         const guardian = person.guardianId ? byId.get(person.guardianId) : undefined;
-        if (guardian && !inQuietHours(now, guardian.quietHours)) {
+        if (guardian && !guardian.muted && !inQuietHours(now, guardian.quietHours)) {
           await outbox.send(guardian, `${guardian.language === "es" ? "Para" : "For"} ${person.name.split(" ")[0]}: ${reminderText(a, host, guardian, minutes)}`, { from: person });
         }
         await store.markReminded(a.id, person.id, now.toISOString());
@@ -177,7 +178,7 @@ export async function tick(deps: SchedulerDeps, now: Date): Promise<TickReport> 
   for (const a of inAnHour) {
     if (await store.wasDelivered("sponsor_nudge", a.id)) continue;
     const sponsor = byId.get(a.sponsorId);
-    if (!sponsor || !sponsor.phoneE164) continue;
+    if (!sponsor || !sponsor.phoneE164 || sponsor.muted) continue;
     const going = (await store.listSignups(a.id)).filter((s) => s.status === "going" && s.personId !== sponsor.id).length;
     try {
       await outbox.send(sponsor, sponsorNudgeText(a, sponsor, going), { from: sponsor });
