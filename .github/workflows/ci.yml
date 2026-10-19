@@ -86,7 +86,7 @@ jobs:
           mask='walk(if type == "object" and has("display_phone_number") then .display_phone_number |= "…" + .[-4:] else . end)'
           g() { curl -sS "https://graph.facebook.com/$V/$1" -H "Authorization: Bearer $TOKEN" | jq "$mask"; }
           echo "== sending number (META_PHONE_NUMBER_ID)"
-          g "$PHONE_ID?fields=display_phone_number,verified_name,status,quality_rating,platform_type,code_verification_status"
+          g "$PHONE_ID?fields=display_phone_number,verified_name,status,name_status,account_mode,quality_rating,platform_type,code_verification_status,messaging_limit_tier,health_status,webhook_configuration"
           echo "== token"
           dbg=$(curl -sS "https://graph.facebook.com/$V/debug_token?input_token=$TOKEN" -H "Authorization: Bearer $TOKEN")
           echo "$dbg" | jq '{valid: .data.is_valid, app: .data.application, app_id: .data.app_id, expires_at: .data.expires_at, scopes: [.data.granular_scopes[]? | {scope, target_ids}], error}'
