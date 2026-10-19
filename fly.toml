@@ -1,7 +1,7 @@
 # One button: GitHub Actions → "Deploy to Fly" (.github/workflows/deploy.yml). By hand:
 # fly launch --no-deploy --copy-config  →  fly volumes create ship_data --size 1  →  fly secrets set …  →  fly deploy
 app = "crucero-luna-2026"
-primary_region = "qro"   # Querétaro: closest Fly region to Acapulco; "dfw" is a fine alternative
+primary_region = "dfw"   # Dallas: closest Fly region to Acapulco (qro is no longer offered)
 
 [build]
   dockerfile = "Dockerfile"
