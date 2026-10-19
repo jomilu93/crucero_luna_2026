@@ -1,12 +1,15 @@
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import {
   type Activity,
+  type Channel,
   type Person,
   type Store,
   addDays,
   dayBounds,
+  inQuietHours,
   mx,
   shipDate,
+  shipTime,
 } from "@crucero/db";
 import { z } from "zod";
 import { describeActivity } from "./context.js";
@@ -27,6 +30,8 @@ export interface ToolContext {
   passenger: Person;
   now: Date;
   outbox: Outbox;
+  /** Where the conversation happens; recorded on activities the passenger creates. */
+  channel?: Channel;
   /** Observability + evals: every executed tool call is reported here. */
   onToolCall?: (rec: ToolCallRecord) => void;
 }
@@ -43,6 +48,16 @@ async function resolvePerson(ctx: ToolContext, name: string | undefined): Promis
   const p = await ctx.store.findPersonByName(name);
   if (!p) throw new Error(`No passenger named "${name}" on the manifest. Ask who they mean or use list_passengers.`);
   return p;
+}
+
+/** Who may change or cancel an activity: its host, or the host's guardian (a parent managing a kid's activity). */
+function canManage(person: Person, activity: Activity, host: Person | undefined): boolean {
+  return activity.sponsorId === person.id || (!!host?.guardianId && host.guardianId === person.id);
+}
+
+async function notAllowed(ctx: ToolContext, a: Activity, what: string): Promise<string> {
+  const host = await ctx.store.getPerson(a.sponsorId);
+  return `NOT ALLOWED: only the host (${host?.name ?? a.sponsorId}) can ${what} "${a.title}". Nothing was changed. Offer to pass the request to them with send_message.`;
 }
 
 async function programFor(ctx: ToolContext, date: string, includeCancelled = false): Promise<Activity[]> {
@@ -168,7 +183,7 @@ export function buildTools(ctx: ToolContext) {
         location: i.location,
         capacity: i.capacity,
         bring: i.bring,
-        createdVia: "cli",
+        createdVia: ctx.channel ?? "cli",
       });
       await store.setSignup(a.id, sponsor.id, "going");
       return `Created: ${await describeActivity(store, a, lang)}`;
@@ -177,7 +192,7 @@ export function buildTools(ctx: ToolContext) {
 
   const update_activity = betaZodTool({
     name: "update_activity",
-    description: "Change details of an existing activity (time, place, capacity, what to bring, title). Only the sponsor, or someone relaying the sponsor's wish, should change it.",
+    description: "Change details of an existing activity (time, place, capacity, what to bring, title). Only the host (or the host's guardian) can; for anyone else it returns NOT ALLOWED and changes nothing.",
     inputSchema: z.object({
       activity_id: z.string(),
       title: z.string().min(3).max(80).optional(),
@@ -192,6 +207,7 @@ export function buildTools(ctx: ToolContext) {
     run: wrap("update_activity", async (i) => {
       const a = await store.getActivity(i.activity_id);
       if (!a) throw new Error(`No activity ${i.activity_id}`);
+      if (!canManage(passenger, a, await store.getPerson(a.sponsorId))) return notAllowed(ctx, a, "change");
       const date = i.date ?? shipDate(a.startsAt);
       const patch: Partial<Activity> = {};
       if (i.title) patch.title = i.title;
@@ -199,8 +215,10 @@ export function buildTools(ctx: ToolContext) {
       if (i.description) patch.description = i.description;
       if (i.capacity) patch.capacity = i.capacity;
       if (i.bring) patch.bring = i.bring;
-      if (i.date || i.start_time) patch.startsAt = mx(date, i.start_time ?? a.startsAt.slice(11, 16));
-      if (i.date || i.end_time) patch.endsAt = mx(date, i.end_time ?? a.endsAt.slice(11, 16));
+      // Reuse the current times in ship time (startsAt/endsAt are stored in UTC).
+      if (i.date || i.start_time) patch.startsAt = mx(date, i.start_time ?? shipTime(a.startsAt));
+      if (i.date || i.end_time) patch.endsAt = mx(date, i.end_time ?? shipTime(a.endsAt));
+      if (patch.endsAt && patch.endsAt <= (patch.startsAt ?? a.startsAt)) patch.endsAt = mx(addDays(date, 1), i.end_time ?? shipTime(a.endsAt)); // crosses midnight
       if (i.start_time && !i.end_time) {
         // keep the original duration
         const dur = new Date(a.endsAt).getTime() - new Date(a.startsAt).getTime();
@@ -213,11 +231,12 @@ export function buildTools(ctx: ToolContext) {
 
   const cancel_activity = betaZodTool({
     name: "cancel_activity",
-    description: "Cancel an activity. Requires a reason. Only for the sponsor (or relaying the sponsor). Does not notify anyone by itself; follow with send_message if people had signed up.",
+    description: "Cancel an activity. Requires a reason. Only the host (or the host's guardian) can; for anyone else it returns NOT ALLOWED. Does not notify anyone by itself; follow with send_message if people had signed up.",
     inputSchema: z.object({ activity_id: z.string(), reason: z.string().min(2).max(200) }),
     run: wrap("cancel_activity", async ({ activity_id, reason }) => {
       const a = await store.getActivity(activity_id);
       if (!a) throw new Error(`No activity ${activity_id}`);
+      if (!canManage(passenger, a, await store.getPerson(a.sponsorId))) return notAllowed(ctx, a, "cancel");
       const updated = await store.updateActivity(a.id, { status: "cancelled", cancelledReason: reason });
       const affected = (await store.listSignups(a.id)).filter((s) => s.status !== "out" && s.personId !== a.sponsorId);
       const names = (await Promise.all(affected.map(async (s) => (await store.getPerson(s.personId))?.name))).filter(Boolean);
@@ -227,7 +246,7 @@ export function buildTools(ctx: ToolContext) {
 
   const signup = betaZodTool({
     name: "signup",
-    description: "Sign a passenger up for an activity (status 'going'), mark them 'maybe', or take them off ('out'). Defaults to the current passenger; pass person_name to act for a kid or someone who asked.",
+    description: "Sign a passenger up for an activity (status 'going'), mark them 'maybe', or take them off ('out'). Defaults to the current passenger; pass person_name to act for a kid or someone who asked. Only the person themself or their guardian can take someone off.",
     inputSchema: z.object({
       activity_id: z.string(),
       status: z.enum(["going", "maybe", "out"]),
@@ -238,6 +257,10 @@ export function buildTools(ctx: ToolContext) {
       const a = await store.getActivity(activity_id);
       if (!a) throw new Error(`No activity ${activity_id}`);
       if (a.status === "cancelled") throw new Error(`"${a.title}" is cancelled.`);
+      // Adding someone is a friendly act; taking them off is theirs (or their guardian's) to decide.
+      if (status === "out" && person.id !== passenger.id && person.guardianId !== passenger.id) {
+        return `NOT ALLOWED: only ${person.name} (or their guardian) can take them off "${a.title}". Nothing was changed. Offer to pass the message along with send_message.`;
+      }
       if (status === "going" && a.capacity !== undefined) {
         const going = (await store.listSignups(a.id)).filter((s) => s.status === "going" && s.personId !== person.id).length;
         if (going >= a.capacity) {
@@ -295,18 +318,32 @@ export function buildTools(ctx: ToolContext) {
 
   const send_message = betaZodTool({
     name: "send_message",
-    description: "Send a WhatsApp message from the Capitán to another passenger or to everyone (announcements, cancellation notices, sponsor nudges). Never use it for the reply to the current passenger; just answer them. Respect quiet hours.",
+    description: "Send a chat message from the Capitán to another passenger or to everyone (announcements, cancellation notices, sponsor nudges). Never use it for the reply to the current passenger; just answer them. Passengers in their quiet hours or muted are skipped and reported back.",
     inputSchema: z.object({
       to: z.string().describe("A passenger's name, or 'everyone'"),
       text: z.string().min(1).max(1200),
     }),
     run: wrap("send_message", async ({ to, text }) => {
       if (to.toLowerCase() === "everyone" || to.toLowerCase() === "todos") {
-        await ctx.outbox.send("everyone", text, { from: passenger });
-        return `Sent to everyone.`;
+        // One by one, so muted passengers and quiet hours are respected (the sender included is fine: they asked).
+        const sent: string[] = [];
+        const held: string[] = [];
+        for (const p of await store.listPeople()) {
+          if (p.muted || !p.phoneE164) continue;
+          if (p.id !== passenger.id && inQuietHours(ctx.now, p.quietHours)) {
+            held.push(`${p.name} (quiet until ${p.quietHours!.end})`);
+            continue;
+          }
+          await ctx.outbox.send(p, text, { from: passenger });
+          sent.push(p.name);
+        }
+        return `Sent to ${sent.length} passenger(s).${held.length ? ` Held back for quiet hours: ${held.join(", ")}. Nothing is queued; offer to resend later.` : ""}`;
       }
       const p = await resolvePerson(ctx, to);
       if (p.muted) return `NOT SENT: ${p.name} asked the Capitán not to message them proactively. Suggest telling them in person.`;
+      if (inQuietHours(ctx.now, p.quietHours)) {
+        return `NOT SENT: it is ${shipTime(ctx.now)} and ${p.name} is in quiet hours until ${p.quietHours!.end}. Nothing is queued; offer to send it after ${p.quietHours!.end}.`;
+      }
       await ctx.outbox.send(p, text, { from: passenger });
       return `Sent to ${p.name}.`;
     }),
