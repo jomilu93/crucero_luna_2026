@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { BetaMessage, BetaMessageParam, BetaTextBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import type { BetaMessage, BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import type { Person, Store } from "@crucero/db";
 import { buildPassengerContext } from "./context.js";
 import { PERSONA } from "./persona.js";
@@ -23,10 +23,15 @@ export interface Turn {
 }
 
 const SERVER_FALLBACK_BETA = "server-side-fallback-2026-07-01" as const;
+const THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01" as const;
 
 /**
  * Capitán Lunático's brain. One instance per process; `respond` is per passenger turn.
- * The persona is a cached prefix; the passenger context and the conversation follow it.
+ *
+ * The system prompt is only the persona, identical on every request. The volatile passenger
+ * context (ship time, today's program, memory) rides at the start of each user turn as a
+ * <ship_context> block, so earlier turns are never rewritten: thinking blocks in the saved
+ * history stay bound to an unchanged prefix, and the whole history stays cacheable.
  */
 export class Director {
   readonly client: Anthropic;
@@ -46,13 +51,9 @@ export class Director {
     this.now = opts.now ?? (() => new Date());
   }
 
-  /** The system prompt as the API will see it: persona (cached) + volatile passenger context. */
-  async systemFor(passenger: Person, text: string, now = this.now()): Promise<BetaTextBlockParam[]> {
-    const context = await buildPassengerContext(this.store, { person: passenger, now, text });
-    return [
-      { type: "text", text: PERSONA, cache_control: { type: "ephemeral" } },
-      { type: "text", text: context },
-    ];
+  /** The per-turn context block that precedes the passenger's words in their message. */
+  async contextFor(passenger: Person, text: string, now = this.now()): Promise<string> {
+    return `<ship_context>\n${await buildPassengerContext(this.store, { person: passenger, now, text })}\n</ship_context>`;
   }
 
   async respond(passenger: Person, text: string, history: BetaMessageParam[] = [], opts: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice" } = {}): Promise<Turn> {
@@ -70,12 +71,24 @@ export class Director {
     const runner = this.client.beta.messages.toolRunner({
       model: this.model,
       max_tokens: 4096,
-      system: await this.systemFor(passenger, text, now),
+      system: [{ type: "text", text: PERSONA, cache_control: { type: "ephemeral" } }],
+      // Safety net: a trimmed or pre-existing history whose thinking blocks no longer match is
+      // answered without those blocks instead of failing with a 400.
+      thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } },
       output_config: { effort: this.effort },
-      betas: [SERVER_FALLBACK_BETA],
+      betas: [SERVER_FALLBACK_BETA, THINKING_BINDING_BETA],
       fallbacks: "default",
       tools,
-      messages: [...history, { role: "user", content: text }],
+      messages: [
+        ...history,
+        {
+          role: "user",
+          content: [
+            { type: "text", text: await this.contextFor(passenger, text, now) },
+            { type: "text", text },
+          ],
+        },
+      ],
       max_iterations: 8,
     });
 

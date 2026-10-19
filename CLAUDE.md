@@ -23,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (84 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (85 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.

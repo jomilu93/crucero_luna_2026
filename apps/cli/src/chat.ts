@@ -60,8 +60,7 @@ for (;;) {
     continue;
   }
   if (line.startsWith("/program")) {
-    const sys = await director.systemFor(passenger, "", now());
-    console.log(sys[1].text);
+    console.log(await director.contextFor(passenger, "", now()));
     continue;
   }
   try {

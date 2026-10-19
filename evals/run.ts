@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import { Director, type Outbox, type ToolCallRecord } from "@crucero/agent";
+import { Director, PERSONA, type Outbox, type ToolCallRecord } from "@crucero/agent";
 import { MemoryStore, seedSample } from "@crucero/db";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -100,7 +100,7 @@ async function runCase(c: Case) {
   if (judge) {
     // The judge sees what the Capitán saw (persona + passenger context with today's program),
     // so facts taken from the context are not mistaken for invented ones.
-    const context = (await director.systemFor(passenger, c.say, now)).map((b) => b.text).join("\n\n");
+    const context = `${PERSONA}\n\n${await director.contextFor(passenger, c.say, now)}`;
     try {
       const res = await client.messages.parse({
         model: process.env.HELPER_MODEL ?? "claude-haiku-5-5",
