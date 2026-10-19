@@ -33,14 +33,17 @@ Dockerfile + fly.toml, CI.
 Live eval (CI `live-eval`, judge on): run 1 15/40 (judge schema crashes), run 2 32/40 after harness fixes and
 the "create clear sponsorships directly" persona rule. Run 3 adds a `muted` opt-out preference (migration
 `002_muted.sql`; scheduler, broadcasts and `send_message` skip muted passengers) and gives the judge tool outputs.
-**Never yet run against a live WhatsApp number**: the first real message exchange is the next milestone.
+Run 4 (27/40) exposed a closing-gag regression, fixed in the persona but not yet re-evaluated.
+**Live on WhatsApp (2026-10-19):** deployed to Fly (`crucero-luna-2026`, region `dfw`, JSON store on the
+`ship_data` volume, `SEED_SAMPLE=off`) via the one-button **Deploy to Fly** workflow, on Meta's test number;
+the owner exchanged the first real messages. Known leftover: Meta's webhook **Test** button boarded a fake
+passenger (+16315551181); there is no way to remove a passenger yet.
 
 ## Next steps, in order
-1. **Live eval**: with `ANTHROPIC_API_KEY` available, run `pnpm eval` (or trigger the CI `live-eval` job), read
-   `evals/results/*.json`, fix persona/tool-description issues until the pass rate is high. Then `pnpm chat` smoke tests.
-2. **Meta test number pilot**: owner creates the Meta app (README → "Running the ship on Meta's Cloud API"); set
-   `META_*` secrets; deploy (`fly deploy`, or a deploy workflow that copies GitHub secrets to Fly) or run locally with
-   a tunnel; point the webhook at `/webhooks/meta`; exchange the first messages with 5 testers.
+1. **Pilot with up to 5 testers** on the test number: read `fly logs`, fix what real conversations expose; re-run the
+   live eval after persona changes. Admin basics: remove a passenger, mark kids/guardians.
+2. **Supabase** (`DATABASE_URL` secret; the deploy workflow migrates) before the real cruise; then the real number +
+   approved templates (`WHATSAPP_TEMPLATES=on`).
 3. **Flyer renderer**: Claude writes concept + copy, an image model paints the art, we overlay title/time/host with
    `satori`/`sharp` (3 templates: Fiesta, Zen, Retro Cruise). Store in Supabase storage; `generate_flyer` tool currently
    only queues (`flyerUrl = pending:…`).
