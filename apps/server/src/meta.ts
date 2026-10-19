@@ -49,9 +49,10 @@ export function e164ToWaId(phone: string): string {
 }
 
 export interface ParsedMetaWebhook {
-  messages: (InboundMessage & { messageId: string })[];
+  /** `toPhoneNumberId` is the business number that received it: one WABA can hold several numbers. */
+  messages: (InboundMessage & { messageId: string; toPhoneNumberId?: string })[];
   /** Delivery/read receipts, ignored by the Capitán but handy for logs. */
-  statuses: { id: string; status: string; recipient: string; error?: string }[];
+  statuses: { id: string; status: string; recipient: string; error?: string; fromPhoneNumberId?: string }[];
 }
 
 type MetaMessage = {
@@ -76,17 +77,19 @@ export function parseMetaWebhook(body: unknown): ParsedMetaWebhook {
     for (const change of entry.changes ?? []) {
       if (change.field !== "messages" || !change.value) continue;
       const v = change.value as {
+        metadata?: { phone_number_id?: string };
         contacts?: { wa_id: string; profile?: { name?: string } }[];
         messages?: MetaMessage[];
         statuses?: { id: string; status: string; recipient_id: string; errors?: { code?: number; title?: string; message?: string }[] }[];
       };
       const names = new Map((v.contacts ?? []).map((c) => [c.wa_id, c.profile?.name]));
+      const pnid = v.metadata?.phone_number_id;
       for (const s of v.statuses ?? []) {
         const e = s.errors?.[0];
-        out.statuses.push({ id: s.id, status: s.status, recipient: s.recipient_id, ...(e ? { error: `${e.code ?? "?"} ${e.title ?? e.message ?? ""}`.trim() } : {}) });
+        out.statuses.push({ id: s.id, status: s.status, recipient: s.recipient_id, ...(e ? { error: `${e.code ?? "?"} ${e.title ?? e.message ?? ""}`.trim() } : {}), ...(pnid ? { fromPhoneNumberId: pnid } : {}) });
       }
       for (const m of v.messages ?? []) {
-        const base = { phoneE164: waIdToE164(m.from), profileName: names.get(m.from), channel: "whatsapp" as const, messageId: m.id };
+        const base = { phoneE164: waIdToE164(m.from), profileName: names.get(m.from), channel: "whatsapp" as const, messageId: m.id, ...(pnid ? { toPhoneNumberId: pnid } : {}) };
         switch (m.type) {
           case "text":
             out.messages.push({ ...base, text: (m.text?.body ?? "").trim() });

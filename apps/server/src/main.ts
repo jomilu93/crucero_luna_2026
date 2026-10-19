@@ -80,7 +80,7 @@ const chat = new ChatService(store, director, outbox);
 // HTTP
 const publicUrl = env.PUBLIC_URL ?? `http://localhost:${env.PORT ?? 8080}`;
 const server = createServer(
-  createRouter({ store, chat, publicUrl, twilioAuthToken: env.TWILIO_AUTH_TOKEN, metaVerifyToken: env.META_VERIFY_TOKEN, metaAppSecret: env.META_APP_SECRET, log }),
+  createRouter({ store, chat, publicUrl, twilioAuthToken: env.TWILIO_AUTH_TOKEN, metaVerifyToken: env.META_VERIFY_TOKEN, metaAppSecret: env.META_APP_SECRET, metaPhoneNumberId: env.META_PHONE_NUMBER_ID, log }),
 );
 server.listen(Number(env.PORT ?? 8080), () => log(`listening on ${publicUrl} (webhooks: ${publicUrl}/webhooks/meta, ${publicUrl}/webhooks/twilio)`));
 
