@@ -64,6 +64,7 @@ export class Director {
       passenger,
       now,
       outbox: this.outbox,
+      channel: opts.channel ?? "cli",
       onToolCall: (rec) => toolCalls.push(rec),
     });
     await this.store.logMessage({ personId: passenger.id, channel: opts.channel ?? "cli", direction: "in", body: text });

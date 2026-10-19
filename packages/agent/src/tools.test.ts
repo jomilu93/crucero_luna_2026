@@ -110,12 +110,37 @@ describe("tools", () => {
   });
   it("sends to everyone or to one passenger through the outbox", async () => {
     const { tools, sent } = await ctxFor("sofia");
-    await tools.send_message.run({ to: "everyone", text: "Yoga puntual a las 7." });
+    expect(await tools.send_message.run({ to: "everyone", text: "Yoga puntual a las 7." })).toBe("Sent to 5 passenger(s).");
     await tools.send_message.run({ to: "Ricardo", text: "Trae las monedas." });
-    expect(sent).toEqual([
-      { to: "everyone", text: "Yoga puntual a las 7." },
-      { to: "Tío Ricardo", text: "Trae las monedas." },
-    ]);
+    expect(sent.slice(0, 5).map((s) => s.to).sort()).toEqual(["Abuela Carmen", "Diego Luna", "Sofía Luna", "Tío Ricardo", "Valeria Luna"]); // Mateo has no phone
+    expect(sent.at(-1)).toEqual({ to: "Tío Ricardo", text: "Trae las monedas." });
+  });
+  it("respects quiet hours on direct messages and broadcasts", async () => {
+    const { tools, sent } = await ctxFor("sofia", new Date(mx("2026-12-27", "23:00")));
+    expect(await tools.send_message.run({ to: "Carmen", text: "¿Mañana bingo?" })).toMatch(/^NOT SENT: .*quiet hours until 08:30/);
+    const out = await tools.send_message.run({ to: "everyone", text: "Mañana yoga" });
+    expect(out).toMatch(/^Sent to 4 passenger\(s\)\. Held back for quiet hours: Abuela Carmen \(quiet until 08:30\)/);
+    expect(sent.map((s) => s.to)).not.toContain("Abuela Carmen");
+  });
+  it("only lets the host change or cancel an activity, and only the person or their guardian take them off", async () => {
+    const { tools, store } = await ctxFor("valeria");
+    const before = (await store.getActivity("a04"))!;
+    expect(await tools.update_activity.run({ activity_id: "a04", start_time: "21:00" })).toMatch(/^NOT ALLOWED: only the host \(Tío Ricardo\)/);
+    expect(await tools.cancel_activity.run({ activity_id: "a04", reason: "lluvia" })).toMatch(/^NOT ALLOWED/);
+    expect(await store.getActivity("a04")).toEqual(before);
+    expect(await tools.signup.run({ activity_id: "a04", status: "out", person_name: "Carmen" })).toMatch(/^NOT ALLOWED: only Abuela Carmen/);
+    expect(await tools.signup.run({ activity_id: "a04", status: "going", person_name: "Diego" })).toMatch(/Diego Luna is now 'going'/); // adding someone is fine
+    const diego = await ctxFor("diego");
+    expect(await diego.tools.signup.run({ activity_id: "a04", status: "out", person_name: "Mateo" })).toMatch(/Mateo Luna is now 'out'/); // guardian
+  });
+  it("moves an activity to another day keeping its ship-time hours", async () => {
+    const { tools, store } = await ctxFor("sofia");
+    const a = (await store.getActivity("a05"))!; // Sunrise yoga, Dec 28 7:00-7:45
+    await tools.update_activity.run({ activity_id: "a05", date: "2026-12-30" });
+    const moved = (await store.getActivity("a05"))!;
+    expect(moved.startsAt).toBe(mx("2026-12-30", "07:00"));
+    expect(moved.endsAt).toBe(mx("2026-12-30", "07:45"));
+    expect(new Date(moved.endsAt).getTime() - new Date(moved.startsAt).getTime()).toBe(new Date(a.endsAt).getTime() - new Date(a.startsAt).getTime());
   });
   it("updates preferences and memory", async () => {
     const { tools, store } = await ctxFor("carmen");
