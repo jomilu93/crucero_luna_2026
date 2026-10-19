@@ -23,12 +23,12 @@ export function privacyPolicyHtml(contact?: string): string {
 <body>
 <h1>Aviso de privacidad · Crucero Luna 2026</h1>
 <p><small>Vigente desde el 19 de octubre de 2026</small></p>
-<p>El <strong>Capitán Lunático</strong> es un asistente de WhatsApp para un viaje familiar privado de La Familia Luna
+<p>El <strong>Capitán Lunático</strong> es un asistente de chat (Telegram o WhatsApp) para un viaje familiar privado de La Familia Luna
 (Acapulco, 26 de diciembre de 2026 al 2 de enero de 2027). Solo lo usan los invitados al viaje. No es un servicio comercial.</p>
 
 <h2>Qué datos usamos</h2>
 <ul>
-  <li>Tu número de WhatsApp y el nombre de tu perfil.</li>
+  <li>Tu identificador de chat (tu número de WhatsApp, o tu ID de Telegram) y el nombre de tu perfil.</li>
   <li>Los mensajes que le envías al Capitán y sus respuestas.</li>
   <li>Lo que tú decidas compartir: cómo quieres que te llamen, idioma, horarios de silencio, gustos o necesidades (por ejemplo, una alergia) para planear las actividades.</li>
   <li>Las actividades que organizas y a las que te apuntas.</li>
@@ -40,7 +40,7 @@ No vendemos tus datos, no los usamos para publicidad y no los compartimos con na
 
 <h2>Quién más los procesa</h2>
 <ul>
-  <li><strong>Meta (WhatsApp)</strong>, que entrega los mensajes.</li>
+  <li><strong>Telegram</strong> o <strong>Meta (WhatsApp)</strong>, que entregan los mensajes.</li>
   <li><strong>Anthropic (Claude)</strong>, el modelo de IA que escribe las respuestas del Capitán. Recibe tus mensajes y el contexto del viaje para contestar.</li>
   <li><strong>Fly.io</strong> (y, más adelante, <strong>Supabase</strong>), donde se aloja el servidor y la información del viaje.</li>
 </ul>
@@ -59,12 +59,12 @@ No vendemos tus datos, no los usamos para publicidad y no los compartimos con na
 <h1 lang="en">Privacy policy · Crucero Luna 2026</h1>
 <div lang="en">
 <p><small>Effective October 19, 2026</small></p>
-<p><strong>Capitán Lunático</strong> is a WhatsApp assistant for La Familia Luna's private family trip
+<p><strong>Capitán Lunático</strong> is a chat assistant (Telegram or WhatsApp) for La Familia Luna's private family trip
 (Acapulco, December 26, 2026 to January 2, 2027). Only invited guests use it. It is not a commercial service.</p>
 
 <h2>What we use</h2>
 <ul>
-  <li>Your WhatsApp number and profile name.</li>
+  <li>Your chat identifier (WhatsApp number, or Telegram ID) and profile name.</li>
   <li>The messages you send the Capitán and its replies.</li>
   <li>What you choose to share: what to call you, language, quiet hours, likes or needs (such as an allergy) for planning activities.</li>
   <li>The activities you host and sign up for.</li>
@@ -76,7 +76,7 @@ We do not sell your data, use it for advertising, or share it with anyone outsid
 
 <h2>Who else processes it</h2>
 <ul>
-  <li><strong>Meta (WhatsApp)</strong>, which delivers the messages.</li>
+  <li><strong>Telegram</strong> or <strong>Meta (WhatsApp)</strong>, which deliver the messages.</li>
   <li><strong>Anthropic (Claude)</strong>, the AI model that writes the Capitán's replies. It receives your messages and the trip context to answer.</li>
   <li><strong>Fly.io</strong> (and later <strong>Supabase</strong>), which host the server and the trip data.</li>
 </ul>

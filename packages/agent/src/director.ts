@@ -55,7 +55,7 @@ export class Director {
     ];
   }
 
-  async respond(passenger: Person, text: string, history: BetaMessageParam[] = [], opts: { channel?: "cli" | "whatsapp" | "web" | "voice" } = {}): Promise<Turn> {
+  async respond(passenger: Person, text: string, history: BetaMessageParam[] = [], opts: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice" } = {}): Promise<Turn> {
     const now = this.now();
     const toolCalls: ToolCallRecord[] = [];
     const tools = buildTools({

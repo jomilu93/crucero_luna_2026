@@ -54,7 +54,7 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
     `Ship time now: ${prettyDate(today, person.language)} ${shipTime(now)} (${today})`,
     headlineFor(today) ? `Today's headline: ${headlineFor(today)}` : "",
     isNew
-      ? `\n# Onboarding\nThis passenger just boarded (their name came from their WhatsApp profile and may be wrong). In ONE short message: welcome them aboard, confirm what to call them, ask Spanish or English, and mention they can sponsor an activity or sign up for one. Use set_preferences/remember for what they answer. Do not list the whole program yet.`
+      ? `\n# Onboarding\nThis passenger just boarded (their name came from their chat profile and may be wrong). In ONE short message: welcome them aboard, confirm what to call them, ask Spanish or English, and mention they can sponsor an activity or sign up for one. Use set_preferences/remember for what they answer. Do not list the whole program yet.`
       : "",
     "",
     `# Today's program (${todays.length} activities; ★ = this passenger is signed up or hosting)`,

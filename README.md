@@ -39,7 +39,22 @@ pnpm eval                                      # behavioral eval; add --judge fo
 pnpm server                                    # webhook + calendar feeds + scheduler (console outbox until TWILIO_* is set)
 ```
 
-### Running the ship on Meta's Cloud API (recommended)
+### Running the ship on Telegram (current channel)
+
+WhatsApp is parked (see Troubleshooting below); Telegram needs no phone number, business verification or templates.
+
+1. In Telegram, message **@BotFather** → `/newbot`, pick a name ("Capitán Lunático") and a username ending in `bot`.
+   Copy the token. Optional: `/setuserpic`, `/setdescription`, and `/setjoingroups` → Disable (the bot only talks in
+   private chats anyway).
+2. Add the token as the `TELEGRAM_BOT_TOKEN` repository secret and run **Deploy to Fly**. On boot the server calls
+   `setWebhook` for `PUBLIC_URL/webhooks/telegram` with a secret derived from the token; `fly logs` shows
+   `telegram webhook → …`. Locally: put the token in `.env`, expose port 8080 with a tunnel and set `PUBLIC_URL`.
+3. Share `https://t.me/<bot username>`. A passenger taps **Start**, is boarded from their Telegram name, and the
+   Capitán asks what to call them. Passengers are stored as `tg:<chat id>`; buttons are inline keyboards.
+
+With `TELEGRAM_BOT_TOKEN` set, Telegram wins over `META_*`/`TWILIO_*` and only `/webhooks/telegram` is live.
+
+### Running the ship on Meta's Cloud API (parked)
 
 Meta's free **test number** lets up to five verified phones talk to the Capitán before any real number exists.
 

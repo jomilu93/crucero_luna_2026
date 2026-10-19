@@ -54,9 +54,10 @@ jobs:
           META_VERIFY_TOKEN: ${{ secrets.META_VERIFY_TOKEN }}
           META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
           PRIVACY_CONTACT: ${{ secrets.PRIVACY_CONTACT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           : > secrets.env
-          for k in ANTHROPIC_API_KEY DATABASE_URL META_ACCESS_TOKEN META_PHONE_NUMBER_ID META_APP_SECRET META_VERIFY_TOKEN META_GRAPH_VERSION PRIVACY_CONTACT; do
+          for k in ANTHROPIC_API_KEY DATABASE_URL META_ACCESS_TOKEN META_PHONE_NUMBER_ID META_APP_SECRET META_VERIFY_TOKEN META_GRAPH_VERSION PRIVACY_CONTACT TELEGRAM_BOT_TOKEN; do
             if [ -n "${!k}" ]; then printf '%s=%s\n' "$k" "${!k}" >> secrets.env; echo "will set $k"; fi
           done
           # --stage: applied by the deploy below instead of restarting the machine twice.
@@ -75,7 +76,7 @@ jobs:
         run: |
           for i in 1 2 3 4 5 6; do
             if curl -fsS "https://$APP.fly.dev/health"; then
-              echo; echo "✅ Live. Meta callback URL: https://$APP.fly.dev/webhooks/meta"; exit 0; fi
+              echo; echo "✅ Live at https://$APP.fly.dev (Telegram registers its webhook on boot; Meta callback: /webhooks/meta)"; exit 0; fi
             sleep 10
           done
           echo "::error::https://$APP.fly.dev/health did not answer"; exit 1

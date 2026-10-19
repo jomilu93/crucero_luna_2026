@@ -5,12 +5,13 @@ export type Role = "adult" | "kid";
 export type HumorLevel = "full" | "light" | "off";
 export type ActivityStatus = "draft" | "published" | "cancelled";
 export type SignupStatus = "going" | "maybe" | "out";
-export type Channel = "cli" | "whatsapp" | "web" | "voice" | "system";
+export type Channel = "cli" | "whatsapp" | "telegram" | "web" | "voice" | "system";
 
 export interface Person {
   id: string;
   name: string;
   nickname?: string;
+  /** Channel address: E.164 for WhatsApp, `tg:<chat id>` for Telegram. */
   phoneE164?: string;
   language: Language;
   role: Role;

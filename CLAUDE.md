@@ -10,8 +10,10 @@ Family members sponsor activities, sign up for each other's, and get a hyped mor
 reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.ts` (+ `docs/persona.md`).
 
 ## Decisions already made (do not re-litigate without the owner)
-- **Channel:** Meta WhatsApp Cloud API direct (`apps/server/src/meta.ts`). Twilio adapter kept as alternative.
-  Telegram is plan B if Meta blocks us by the Oct 31 gate.
+- **Channel:** **Telegram for now** (`apps/server/src/telegram.ts`, owner's call on 2026-10-19 after the WhatsApp number
+  turned out to sit in a Twilio-created SIVICO WABA whose inbound never reached our app). Meta Cloud API direct
+  (`meta.ts`) and Twilio (`twilio.ts`) stay in the code; `TELEGRAM_BOT_TOKEN` set → Telegram wins and only its webhook is live.
+  Revisit WhatsApp later with a clean number registered directly in our Meta app.
 - **Brain:** `claude-opus-5-5` via the Anthropic SDK beta Tool Runner, `effort: low` for chat, `medium` for the
   morning show; `claude-haiku-5-5` for the eval judge. Server-side `fallbacks: "default"`. Persona is a cached prefix.
 - **Store:** `Store` interface; `MemoryStore` (JSON file) for dev, `PgStore` (Supabase Postgres) for prod.
@@ -21,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (74 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (84 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -38,9 +40,12 @@ Run 4 (27/40) exposed a closing-gag regression, fixed in the persona but not yet
 `ship_data` volume, `SEED_SAMPLE=off`) via the one-button **Deploy to Fly** workflow, on Meta's test number;
 the owner exchanged the first real messages. Known leftover: Meta's webhook **Test** button boarded a fake
 passenger (+16315551181); there is no way to remove a passenger yet.
+Then the real number (…0909, SIVICO WABA `2232002254037592`, named "SIVICO - Twilio, Inc") never delivered inbound
+webhooks despite a published app, a subscribed WABA and correct routing (CI `meta-doctor` job shows all of this), so
+the owner switched to **Telegram**: bot adapter, `tg:<chat id>` addresses, inline buttons, migration `003_telegram_channel.sql`.
 
 ## Next steps, in order
-1. **Pilot with up to 5 testers** on the test number: read `fly logs`, fix what real conversations expose; re-run the
+1. **Pilot on Telegram** (owner creates the bot with @BotFather, sets `TELEGRAM_BOT_TOKEN`, deploys): read `fly logs`, fix what real conversations expose; re-run the
    live eval after persona changes. Admin basics: remove a passenger, mark kids/guardians.
 2. **Supabase** (`DATABASE_URL` secret; the deploy workflow migrates) before the real cruise; then the real number +
    approved templates (`WHATSAPP_TEMPLATES=on`).
