@@ -126,6 +126,16 @@ describe("tools", () => {
     expect(p.quietHours).toEqual({ start: "21:00", end: "09:00" });
     expect((await store.getMemory("carmen")).map((m) => m.key)).toContain("allergy");
   });
+  it("mutes on request and refuses direct messages to a muted passenger", async () => {
+    const { tools, store, sent } = await ctxFor("ricardo");
+    await tools.set_preferences.run({ muted: true });
+    expect((await store.getPerson("ricardo"))!.muted).toBe(true);
+    const other = await ctxFor("sofia");
+    await other.store.updatePerson("ricardo", { muted: true });
+    expect(await other.tools.send_message.run({ to: "Ricardo", text: "hola" })).toMatch(/^NOT SENT/);
+    expect(other.sent).toEqual([]);
+    expect(sent).toEqual([]);
+  });
   it("queues a flyer without claiming it exists", async () => {
     const { tools, store } = await ctxFor("valeria");
     const out = await tools.generate_flyer.run({ activity_id: "a09", vibe: "retro-cruise", tagline: "Cero vergüenza" });

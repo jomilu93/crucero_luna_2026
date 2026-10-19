@@ -83,7 +83,15 @@ rate can be checked without anyone copying keys around. On Fly, secrets go in wi
 
 ### Deploying
 
-`Dockerfile` + `fly.toml` run the server as one always-on machine: `fly launch --no-deploy --copy-config`,
+**One button:** add a `FLY_API_TOKEN` repository secret (Fly dashboard → Tokens, or `fly tokens create org`),
+plus the `META_*` secrets (and `DATABASE_URL` once Supabase exists), then Actions → **Deploy to Fly** → Run
+workflow. It tests, creates the app and a 1 GB `ship_data` volume on first run, copies whichever of
+`ANTHROPIC_API_KEY`, `DATABASE_URL`, `META_*` are set in GitHub to Fly, runs migrations if there is a
+database, deploys, and prints the Meta callback URL. Without `DATABASE_URL` the JSON store lives on the
+volume (`/data/crucero.json`) and starts empty (`SEED_SAMPLE=off`): testers board by messaging the ship.
+
+By hand: `Dockerfile` + `fly.toml` run the server as one always-on machine: `fly launch --no-deploy --copy-config`,
+`fly volumes create ship_data --size 1`,
 `fly secrets set ANTHROPIC_API_KEY=… DATABASE_URL=… META_ACCESS_TOKEN=… META_PHONE_NUMBER_ID=… META_APP_SECRET=… META_VERIFY_TOKEN=…`,
 then `fly deploy`. Point the Meta webhook at `https://<app>.fly.dev/webhooks/meta` (or Twilio's at `/webhooks/twilio`).
 

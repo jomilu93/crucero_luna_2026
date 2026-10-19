@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
@@ -16,7 +16,7 @@ let diego: Person;
 
 beforeAll(async () => {
   pg = new PGlite();
-  await pg.exec(readFileSync(join(here, "..", "sql", "001_init.sql"), "utf8"));
+  for (const f of readdirSync(join(here, "..", "sql")).filter((f) => f.endsWith(".sql")).sort()) await pg.exec(readFileSync(join(here, "..", "sql", f), "utf8"));
   const db: Queryable = { query: async (text, params = []) => (await pg.query(text, params)).rows as never };
   store = new PgStore(db);
   sofia = await store.createPerson({ name: "Sofía Luna", phoneE164: "+15550000001", language: "es", role: "adult", wakeTime: "06:30" });
@@ -46,6 +46,8 @@ describe("PgStore on a real Postgres (PGlite)", () => {
     expect((await store.findPersonByName("dieguito"))?.id).toBe(diego.id);
     const cleared = await store.updatePerson(diego.id, { quietHours: undefined, humor: "full" });
     expect(cleared.quietHours).toEqual({ start: "22:00", end: "08:00" }); // undefined fields are skipped, not nulled
+    expect((await store.updatePerson(diego.id, { muted: true })).muted).toBe(true);
+    expect((await store.updatePerson(diego.id, { muted: false })).muted).toBeUndefined();
   });
 
   it("creates, lists, filters and updates activities", async () => {

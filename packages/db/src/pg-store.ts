@@ -49,6 +49,7 @@ function rowToPerson(r: Row): Person {
     humor: r.humor as Person["humor"],
     quietHours: r.quiet_start && r.quiet_end ? { start: hhmm(r.quiet_start), end: hhmm(r.quiet_end) } : undefined,
     wakeTime: hhmm(r.wake_time),
+    muted: r.muted === true ? true : undefined,
     icsToken: String(r.ics_token),
     joinedAt: iso(r.joined_at),
   };
@@ -99,6 +100,7 @@ const PERSON_COLS: Record<string, string> = {
   guardianId: "guardian_id",
   humor: "humor",
   wakeTime: "wake_time",
+  muted: "muted",
   icsToken: "ics_token",
 };
 const ACTIVITY_COLS: Record<string, string> = {
@@ -138,7 +140,7 @@ function setClause(patch: Record<string, unknown>, cols: Record<string, string>,
   return { sql: parts.join(", "), params };
 }
 
-/** Production store on Postgres (Supabase). Schema: sql/001_init.sql. */
+/** Production store on Postgres (Supabase). Schema: sql/*.sql (applied in order). */
 export class PgStore implements Store {
   constructor(private readonly db: Queryable) {}
 

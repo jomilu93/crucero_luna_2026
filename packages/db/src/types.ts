@@ -21,6 +21,8 @@ export interface Person {
   quietHours?: { start: string; end: string };
   /** Local wall-clock time for the morning message, "HH:MM". */
   wakeTime: string;
+  /** Opted out of proactive messages (morning, reminders, nudges, announcements); replies still flow. */
+  muted?: boolean;
   icsToken: string;
   joinedAt: string;
 }
