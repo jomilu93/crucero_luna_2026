@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { buildPersonalCalendar, type ChatService } from "@crucero/agent";
 import type { Store } from "@crucero/db";
 import { parseMetaWebhook, validateMetaSignature } from "./meta.js";
+import { privacyPolicyHtml } from "./privacy.js";
 import { parseTwilioInbound, validateTwilioSignature } from "./twilio.js";
 
 export interface RouterDeps {
@@ -13,6 +14,10 @@ export interface RouterDeps {
   /** Meta webhook: the verify token you typed in the app dashboard, and the app secret for signatures. */
   metaVerifyToken?: string;
   metaAppSecret?: string;
+  /** The ship's number. Webhooks cover every number in the WABA; messages to the others are ignored. */
+  metaPhoneNumberId?: string;
+  /** Who guests contact about their data, shown on /privacy. */
+  privacyContact?: string;
   log?: (line: string) => void;
 }
 
@@ -61,6 +66,7 @@ export function createRouter(deps: RouterDeps) {
     const url = new URL(req.url ?? "/", deps.publicUrl);
     try {
       if (req.method === "GET" && url.pathname === "/health") return send(res, 200, "ok");
+      if (req.method === "GET" && url.pathname === "/privacy") return send(res, 200, privacyPolicyHtml(deps.privacyContact), "text/html; charset=utf-8");
 
       if (req.method === "POST" && url.pathname === "/webhooks/twilio") {
         const raw = await readBody(req);
@@ -107,9 +113,14 @@ export function createRouter(deps: RouterDeps) {
           }
           send(res, 200, "ok"); // Meta wants a fast 200; everything else happens after.
           log(`meta webhook: ${parsed.messages.length} message(s), ${parsed.statuses.length} status(es)`);
+          const ours = (pnid?: string) => !deps.metaPhoneNumberId || !pnid || pnid === deps.metaPhoneNumberId;
           // Outbound failures only surface here (e.g. 131047 outside the 24h window, 131030 recipient not allowed on a test number).
-          for (const s of parsed.statuses) if (s.status === "failed") log(`meta delivery FAILED to ${s.recipient}: ${s.error ?? "no detail"}`);
+          for (const s of parsed.statuses) if (s.status === "failed" && ours(s.fromPhoneNumberId)) log(`meta delivery FAILED to ${s.recipient}: ${s.error ?? "no detail"}`);
           for (const m of parsed.messages) {
+            if (!ours(m.toPhoneNumberId)) {
+              log(`meta webhook: ignored a message to another number in the WABA (phone number id ${m.toPhoneNumberId})`);
+              continue;
+            }
             if (recent.seen(m.messageId)) continue;
             deps.chat
               .handle(m)

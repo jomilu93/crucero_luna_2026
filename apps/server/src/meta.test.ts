@@ -10,10 +10,10 @@ import { MetaWhatsAppOutbox, buttonTitle, parseMetaWebhook, validateMetaSignatur
 const APP_SECRET = "app-secret";
 const VERIFY = "crucero-verify-123";
 
-function webhookBody(messages: unknown[], contacts: unknown[] = [{ wa_id: "15550000001", profile: { name: "Sofía" } }]) {
+function webhookBody(messages: unknown[], contacts: unknown[] = [{ wa_id: "15550000001", profile: { name: "Sofía" } }], phoneNumberId = "PNID") {
   return {
     object: "whatsapp_business_account",
-    entry: [{ id: "WABA", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: { phone_number_id: "PNID" }, contacts, messages } }] }],
+    entry: [{ id: "WABA", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: { phone_number_id: phoneNumberId }, contacts, messages } }] }],
   };
 }
 
@@ -148,7 +148,7 @@ describe("meta webhook routes", () => {
     };
     const chat = new ChatService(store, responder, outbox);
     // One router for the whole suite, as in production, so the retry de-duplication set is shared.
-    const router = createRouter({ store, chat, publicUrl: "http://localhost", metaVerifyToken: VERIFY, metaAppSecret: APP_SECRET });
+    const router = createRouter({ store, chat, publicUrl: "http://localhost", metaVerifyToken: VERIFY, metaAppSecret: APP_SECRET, metaPhoneNumberId: "PNID" });
     server = createServer((req, res) => void router(req, res));
     await new Promise<void>((r) => server.listen(0, r));
     base = `http://localhost:${(server.address() as AddressInfo).port}`;
@@ -184,6 +184,13 @@ describe("meta webhook routes", () => {
     expect(seenTexts.at(-1)).toBe("[Botón] Apúntame a la actividad a04.");
     expect(sent.map((s) => s.text)).toEqual(["Buenos días…", "hola Sofía Luna"]);
     expect(buttons).toEqual([{ to: "sofia", body: "¿Te apunto a alguna?", ids: ["signup:a04"] }]); // a99 does not exist → dropped
+  });
+  it("ignores messages to other numbers in the same WABA", async () => {
+    sent.length = 0;
+    const r = await post(webhookBody([{ from: "15550000001", id: "wamid.other", type: "text", text: { body: "hola empresa" } }], undefined, "OTHER_NUMBER"));
+    expect(r.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(sent).toEqual([]);
   });
   it("ignores status-only webhooks", async () => {
     sent.length = 0;

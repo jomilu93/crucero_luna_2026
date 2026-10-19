@@ -95,6 +95,15 @@ describe("http router", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
   });
+  it("serves the bilingual privacy policy", async () => {
+    const res = await fetch(`${base}/privacy`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/text\/html/);
+    const html = await res.text();
+    expect(html).toContain("Aviso de privacidad");
+    expect(html).toContain("Privacy policy");
+    expect(html).toContain("Anthropic");
+  });
   it("rejects unsigned webhooks and accepts signed ones, replying asynchronously", async () => {
     const params = { From: "whatsapp:+15550000001", Body: "hola capitán", ProfileName: "Sofía" };
     const body = new URLSearchParams(params).toString();

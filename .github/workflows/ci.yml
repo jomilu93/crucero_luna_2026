@@ -14,6 +14,18 @@ on:
         description: "Also grade tone with the Haiku judge"
         type: boolean
         default: false
+      meta_doctor:
+        description: "Diagnose the Meta WhatsApp setup (read-only; uses the META_* secrets)"
+        type: boolean
+        default: false
+      meta_resubscribe:
+        description: "With meta_doctor: also subscribe the sending number's WABA to the app"
+        type: boolean
+        default: false
+      meta_waba_ids:
+        description: "With meta_doctor: extra WABA IDs to inspect (space-separated)"
+        type: string
+        default: ""
 
 jobs:
   test:
@@ -59,3 +71,46 @@ jobs:
           name: eval-results
           path: evals/results/
           if-no-files-found: warn
+
+  meta-doctor:
+    # Manual only. The repo is public, so phone numbers are masked to their last 4 digits.
+    if: github.event_name == 'workflow_dispatch' && inputs.meta_doctor
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      PHONE_ID: ${{ secrets.META_PHONE_NUMBER_ID }}
+      V: ${{ secrets.META_GRAPH_VERSION || 'v22.0' }}
+    steps:
+      - name: Inspect number, token, WABAs and webhook subscriptions
+        run: |
+          mask='walk(if type == "object" and has("display_phone_number") then .display_phone_number |= "…" + .[-4:] else . end)'
+          g() { curl -sS "https://graph.facebook.com/$V/$1" -H "Authorization: Bearer $TOKEN" | jq "$mask"; }
+          echo "== sending number (META_PHONE_NUMBER_ID)"
+          g "$PHONE_ID?fields=display_phone_number,verified_name,status,quality_rating,platform_type,code_verification_status"
+          echo "== token"
+          dbg=$(curl -sS "https://graph.facebook.com/$V/debug_token?input_token=$TOKEN" -H "Authorization: Bearer $TOKEN")
+          echo "$dbg" | jq '{valid: .data.is_valid, app: .data.application, app_id: .data.app_id, expires_at: .data.expires_at, scopes: [.data.granular_scopes[]? | {scope, target_ids}], error}'
+          owner=""
+          wabas=$(echo "$dbg" | jq -r '.data.granular_scopes[]? | select(.scope | startswith("whatsapp")) | .target_ids[]?')
+          # Account-wide tokens list no target_ids: find the WABAs through the businesses the token can see.
+          for b in $(curl -sS "https://graph.facebook.com/$V/me/businesses?fields=id,name" -H "Authorization: Bearer $TOKEN" | jq -r '.data[]?.id'); do
+            for edge in owned_whatsapp_business_accounts client_whatsapp_business_accounts; do
+              wabas="$wabas $(curl -sS "https://graph.facebook.com/$V/$b/$edge?fields=id" -H "Authorization: Bearer $TOKEN" | jq -r '.data[]?.id')"
+            done
+          done
+          echo "== businesses"; g "me/businesses?fields=id,name"
+          for w in $(echo "$wabas ${{ inputs.meta_waba_ids }}" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u); do
+            echo "== WABA $w"
+            g "$w?fields=name,currency,account_review_status"
+            echo "-- phone numbers"
+            nums=$(curl -sS "https://graph.facebook.com/$V/$w/phone_numbers?fields=id,display_phone_number,verified_name" -H "Authorization: Bearer $TOKEN")
+            echo "$nums" | jq "$mask"
+            if echo "$nums" | jq -e --arg id "$PHONE_ID" '.data[]? | select(.id == $id)' >/dev/null; then owner="$w"; echo "   ↑ owns the sending number"; fi
+            echo "-- apps subscribed to this WABA's webhooks"
+            g "$w/subscribed_apps"
+          done
+          if [ -z "$owner" ]; then echo "::warning::No WABA visible to this token owns META_PHONE_NUMBER_ID"; fi
+          if [ "${{ inputs.meta_resubscribe }}" = "true" ] && [ -n "$owner" ]; then
+            echo "== subscribing WABA $owner to the app"
+            curl -sS -X POST "https://graph.facebook.com/$V/$owner/subscribed_apps" -H "Authorization: Bearer $TOKEN"; echo
+          fi
