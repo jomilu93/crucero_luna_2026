@@ -35,7 +35,9 @@ Dockerfile + fly.toml, CI.
 Live eval (CI `live-eval`, judge on): run 1 15/40 (judge schema crashes), run 2 32/40 after harness fixes and
 the "create clear sponsorships directly" persona rule. Run 3 adds a `muted` opt-out preference (migration
 `002_muted.sql`; scheduler, broadcasts and `send_message` skip muted passengers) and gives the judge tool outputs.
-Run 4 (27/40) exposed a closing-gag regression, fixed in the persona but not yet re-evaluated.
+Run 4 (27/40) exposed a closing-gag regression. Run 5 on main (context in the user turn, tool permissions): 34/40,
+all deterministic checks passing. Run 6 (persona: last line always useful; judge calibrated to the persona): **37/40**,
+zero deterministic failures; the 3 left are "two gags in one reply" tone calls.
 **Live on WhatsApp (2026-10-19):** deployed to Fly (`crucero-luna-2026`, region `dfw`, JSON store on the
 `ship_data` volume, `SEED_SAMPLE=off`) via the one-button **Deploy to Fly** workflow, on Meta's test number;
 the owner exchanged the first real messages. Known leftover: Meta's webhook **Test** button boarded a fake
