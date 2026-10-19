@@ -74,6 +74,13 @@ Inbound voice notes are acknowledged but not transcribed yet (Phase 2).
 
 With `DATABASE_URL` set the server uses Postgres (run `pnpm db:migrate` once); otherwise it uses the JSON dev store.
 
+### Secrets
+
+Never commit `.env` (it is gitignored). Locally, keys live in `.env`. In GitHub, add them as **repository
+secrets** (Settings → Secrets and variables → Actions); the `CI` workflow's manual "live-eval" job runs
+`pnpm eval` with `ANTHROPIC_API_KEY` from there and uploads `evals/results/` as an artifact, so the pass
+rate can be checked without anyone copying keys around. On Fly, secrets go in with `fly secrets set`.
+
 ### Deploying
 
 `Dockerfile` + `fly.toml` run the server as one always-on machine: `fly launch --no-deploy --copy-config`,

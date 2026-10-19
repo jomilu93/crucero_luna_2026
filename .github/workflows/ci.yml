@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      live_eval:
+        description: "Run the live Capitán eval (needs ANTHROPIC_API_KEY repo secret)"
+        type: boolean
+        default: true
+      judge:
+        description: "Also grade tone with the Haiku judge"
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  live-eval:
+    # Manual only: it spends real API credits. Secrets never leave GitHub's runner.
+    if: github.event_name == 'workflow_dispatch' && inputs.live_eval
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check the key is present
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY repository secret is not set (Settings → Secrets and variables → Actions)"; exit 1; fi
+      - name: Run the Capitán eval
+        run: pnpm eval ${{ inputs.judge && '--judge' || '' }}
+        continue-on-error: true
+      - name: Morning program dry run (no API)
+        run: pnpm morning --date 2026-12-31 --dry
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: evals/results/
+          if-no-files-found: warn
