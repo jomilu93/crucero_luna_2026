@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import { Director, PERSONA, type Outbox, type ToolCallRecord } from "@crucero/agent";
+import { Director, type Outbox, type ToolCallRecord } from "@crucero/agent";
 import { MemoryStore, seedSample } from "@crucero/db";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -58,7 +58,7 @@ const subset = (expected: Record<string, unknown>, actual: unknown): boolean => 
   });
 };
 
-const Verdict = z.object({ in_character: z.boolean(), useful_first: z.boolean(), humor_rules_ok: z.boolean(), notes: z.string().max(300) });
+const Verdict = z.object({ in_character: z.boolean(), useful_first: z.boolean(), humor_rules_ok: z.boolean(), notes: z.string().describe("One or two short sentences") });
 
 async function runCase(c: Case) {
   const now = new Date(c.at);
@@ -94,15 +94,26 @@ async function runCase(c: Case) {
 
   let verdict: z.infer<typeof Verdict> | undefined;
   if (judge) {
-    const res = await client.messages.parse({
-      model: process.env.HELPER_MODEL ?? "claude-haiku-5-5",
-      max_tokens: 1024,
-      system: `You grade a cruise-director chatbot reply against its persona rules. Persona rules follow.\n\n${PERSONA}`,
-      output_config: { format: zodOutputFormat(Verdict) },
-      messages: [{ role: "user", content: `Passenger (${passenger.name}, humor=${passenger.humor}, lang=${passenger.language}) said: ${c.say}\n\nReply:\n${turn.text}\n\nTools used: ${calls.map((k) => k.name).join(", ") || "none"}` }],
-    });
-    verdict = res.parsed_output ?? undefined;
-    if (verdict && !(verdict.in_character && verdict.useful_first && verdict.humor_rules_ok)) failures.push(`judge: ${verdict.notes}`);
+    // The judge sees what the Capitán saw (persona + passenger context with today's program),
+    // so facts taken from the context are not mistaken for invented ones.
+    const context = (await director.systemFor(passenger, c.say, now)).map((b) => b.text).join("\n\n");
+    try {
+      const res = await client.messages.parse({
+        model: process.env.HELPER_MODEL ?? "claude-haiku-5-5",
+        max_tokens: 1024,
+        system:
+          "You grade one reply from a cruise-director chatbot against its persona rules. Below, between the markers, is the chatbot's full system prompt: its persona and the per-passenger context it was given (today's program and sign-ups are already in it, so details taken from there are not invented). With humor off, plain wording without ship-speak is in character. Keep notes to one or two short sentences.\n\n<chatbot_system_prompt>\n" +
+          context +
+          "\n</chatbot_system_prompt>",
+        output_config: { format: zodOutputFormat(Verdict) },
+        messages: [{ role: "user", content: `Passenger said: ${c.say}\n\n<reply>\n${turn.text}\n</reply>\n\n(Grader metadata, not part of the reply: tools called this turn: ${calls.map((k) => k.name).join(", ") || "none"})` }],
+      });
+      verdict = res.parsed_output ?? undefined;
+      if (verdict && !(verdict.in_character && verdict.useful_first && verdict.humor_rules_ok)) failures.push(`judge: ${verdict.notes}`);
+    } catch (err) {
+      // A judge hiccup must not discard the deterministic checks above.
+      failures.push(`judge errored: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
+    }
   }
 
   return { id: c.id, say: c.say, reply: turn.text, tools: calls.map((k) => ({ name: k.name, input: k.input })), sent, failures, verdict, usage: turn.usage };

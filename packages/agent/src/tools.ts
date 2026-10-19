@@ -140,7 +140,7 @@ export function buildTools(ctx: ToolContext) {
 
   const create_activity = betaZodTool({
     name: "create_activity",
-    description: "Create (sponsor) a new activity on the program. The sponsor defaults to the current passenger. Only call once the passenger has confirmed the one-line summary, or gave every detail unambiguously.",
+    description: "Create (sponsor) a new activity on the program. The sponsor defaults to the current passenger. Call it right away when what, day, start time and place are all clear (default end_time to ~90 minutes after start); otherwise only after the passenger confirmed the one-line summary.",
     inputSchema: z.object({
       title: z.string().min(3).max(80),
       emoji: z.string().min(1).max(4).describe("One emoji that fits the activity"),
