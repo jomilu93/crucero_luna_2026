@@ -1,0 +1,29 @@
+# fly launch --no-deploy --copy-config  →  fly secrets set ANTHROPIC_API_KEY=… TWILIO_…  →  fly deploy
+app = "crucero-luna-2026"
+primary_region = "qro"   # Querétaro: closest Fly region to Acapulco; "dfw" is a fine alternative
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  PUBLIC_URL = "https://crucero-luna-2026.fly.dev"
+  WHATSAPP_TEMPLATES = "off"
+  SCHEDULER = "on"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"     # the scheduler must keep running
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  method = "GET"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

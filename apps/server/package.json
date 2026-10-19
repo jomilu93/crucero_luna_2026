@@ -1,0 +1,12 @@
+{
+  "name": "@crucero/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@crucero/agent": "workspace:*",
+    "@crucero/db": "workspace:*",
+    "postgres": "^3.4.9"
+  }
+}

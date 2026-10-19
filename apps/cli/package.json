@@ -1,0 +1,11 @@
+{
+  "name": "@crucero/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@crucero/agent": "workspace:*",
+    "@crucero/db": "workspace:*",
+    "@anthropic-ai/sdk": "^0.135.0"
+  }
+}
