@@ -22,6 +22,10 @@ on:
         description: "With meta_doctor: also subscribe the sending number's WABA to the app"
         type: boolean
         default: false
+      meta_waba_ids:
+        description: "With meta_doctor: extra WABA IDs to inspect (space-separated)"
+        type: string
+        default: ""
 
 jobs:
   test:
@@ -87,7 +91,15 @@ jobs:
           dbg=$(curl -sS "https://graph.facebook.com/$V/debug_token?input_token=$TOKEN" -H "Authorization: Bearer $TOKEN")
           echo "$dbg" | jq '{valid: .data.is_valid, app: .data.application, app_id: .data.app_id, expires_at: .data.expires_at, scopes: [.data.granular_scopes[]? | {scope, target_ids}], error}'
           owner=""
-          for w in $(echo "$dbg" | jq -r '.data.granular_scopes[]? | select(.scope | startswith("whatsapp")) | .target_ids[]?' | sort -u); do
+          wabas=$(echo "$dbg" | jq -r '.data.granular_scopes[]? | select(.scope | startswith("whatsapp")) | .target_ids[]?')
+          # Account-wide tokens list no target_ids: find the WABAs through the businesses the token can see.
+          for b in $(curl -sS "https://graph.facebook.com/$V/me/businesses?fields=id,name" -H "Authorization: Bearer $TOKEN" | jq -r '.data[]?.id'); do
+            for edge in owned_whatsapp_business_accounts client_whatsapp_business_accounts; do
+              wabas="$wabas $(curl -sS "https://graph.facebook.com/$V/$b/$edge?fields=id" -H "Authorization: Bearer $TOKEN" | jq -r '.data[]?.id')"
+            done
+          done
+          echo "== businesses"; g "me/businesses?fields=id,name"
+          for w in $(echo "$wabas ${{ inputs.meta_waba_ids }}" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u); do
             echo "== WABA $w"
             g "$w?fields=name,currency,account_review_status"
             echo "-- phone numbers"
