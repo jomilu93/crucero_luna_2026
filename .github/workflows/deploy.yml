@@ -53,9 +53,10 @@ jobs:
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
           META_VERIFY_TOKEN: ${{ secrets.META_VERIFY_TOKEN }}
           META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
+          PRIVACY_CONTACT: ${{ secrets.PRIVACY_CONTACT }}
         run: |
           : > secrets.env
-          for k in ANTHROPIC_API_KEY DATABASE_URL META_ACCESS_TOKEN META_PHONE_NUMBER_ID META_APP_SECRET META_VERIFY_TOKEN META_GRAPH_VERSION; do
+          for k in ANTHROPIC_API_KEY DATABASE_URL META_ACCESS_TOKEN META_PHONE_NUMBER_ID META_APP_SECRET META_VERIFY_TOKEN META_GRAPH_VERSION PRIVACY_CONTACT; do
             if [ -n "${!k}" ]; then printf '%s=%s\n' "$k" "${!k}" >> secrets.env; echo "will set $k"; fi
           done
           # --stage: applied by the deploy below instead of restarting the machine twice.
