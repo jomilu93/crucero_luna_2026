@@ -93,15 +93,22 @@ export function createRouter(deps: RouterDeps) {
           const raw = await readBody(req, 1024 * 1024);
           if (deps.metaAppSecret) {
             const sig = req.headers["x-hub-signature-256"];
-            if (!validateMetaSignature(deps.metaAppSecret, raw, Array.isArray(sig) ? sig[0] : sig)) return send(res, 403, "bad signature");
+            if (!validateMetaSignature(deps.metaAppSecret, raw, Array.isArray(sig) ? sig[0] : sig)) {
+              log(`meta webhook rejected: bad signature (${sig ? "check META_APP_SECRET" : "no X-Hub-Signature-256 header"})`);
+              return send(res, 403, "bad signature");
+            }
           }
           let parsed;
           try {
             parsed = parseMetaWebhook(JSON.parse(raw));
           } catch {
+            log("meta webhook rejected: body is not JSON");
             return send(res, 400, "bad json");
           }
           send(res, 200, "ok"); // Meta wants a fast 200; everything else happens after.
+          log(`meta webhook: ${parsed.messages.length} message(s), ${parsed.statuses.length} status(es)`);
+          // Outbound failures only surface here (e.g. 131047 outside the 24h window, 131030 recipient not allowed on a test number).
+          for (const s of parsed.statuses) if (s.status === "failed") log(`meta delivery FAILED to ${s.recipient}: ${s.error ?? "no detail"}`);
           for (const m of parsed.messages) {
             if (recent.seen(m.messageId)) continue;
             deps.chat

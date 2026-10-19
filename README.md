@@ -59,6 +59,15 @@ WhatsApp; the SMS/voice code arrives on it); submit the three templates (`mornin
 buttons, `activity_reminder`, `new_activity`) under Message templates and put their names in `META_TEMPLATE_*`,
 then set `WHATSAPP_TEMPLATES=on`.
 
+Troubleshooting (all seen on the first setup; every webhook call is logged, so start with `fly logs`):
+- *Meta's webhook **Test** works but real messages never show up*: the WhatsApp Business Account is not subscribed
+  to the app. `curl -X POST "https://graph.facebook.com/v22.0/<WABA_ID>/subscribed_apps" -H "Authorization: Bearer <token>"`.
+- *`meta delivery FAILED … 131042 Business eligibility payment issue`*: the WABA that owns the sending number (the
+  test number has its own WABA; its ID is on API Setup) has no payment method. Add or share a card with that WABA.
+- *`131030 Recipient phone number not in allowed list`*: add the tester under API Setup → "To". The Test button's
+  fake sender (+16315551181) always fails this way.
+- *Replies stop after a day*: the temporary token expired; use a System User token.
+
 Inbound voice notes are acknowledged but not transcribed yet (Phase 2).
 
 ### Running the ship against the Twilio sandbox (alternative)

@@ -51,7 +51,7 @@ export function e164ToWaId(phone: string): string {
 export interface ParsedMetaWebhook {
   messages: (InboundMessage & { messageId: string })[];
   /** Delivery/read receipts, ignored by the Capitán but handy for logs. */
-  statuses: { id: string; status: string; recipient: string }[];
+  statuses: { id: string; status: string; recipient: string; error?: string }[];
 }
 
 type MetaMessage = {
@@ -78,10 +78,13 @@ export function parseMetaWebhook(body: unknown): ParsedMetaWebhook {
       const v = change.value as {
         contacts?: { wa_id: string; profile?: { name?: string } }[];
         messages?: MetaMessage[];
-        statuses?: { id: string; status: string; recipient_id: string }[];
+        statuses?: { id: string; status: string; recipient_id: string; errors?: { code?: number; title?: string; message?: string }[] }[];
       };
       const names = new Map((v.contacts ?? []).map((c) => [c.wa_id, c.profile?.name]));
-      for (const s of v.statuses ?? []) out.statuses.push({ id: s.id, status: s.status, recipient: s.recipient_id });
+      for (const s of v.statuses ?? []) {
+        const e = s.errors?.[0];
+        out.statuses.push({ id: s.id, status: s.status, recipient: s.recipient_id, ...(e ? { error: `${e.code ?? "?"} ${e.title ?? e.message ?? ""}`.trim() } : {}) });
+      }
       for (const m of v.messages ?? []) {
         const base = { phoneE164: waIdToE164(m.from), profileName: names.get(m.from), channel: "whatsapp" as const, messageId: m.id };
         switch (m.type) {
