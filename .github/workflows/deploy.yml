@@ -1,0 +1,80 @@
+name: Deploy to Fly
+
+# One button: Actions → "Deploy to Fly" → Run workflow.
+# Needs the FLY_API_TOKEN repository secret (fly tokens create org, or the Fly dashboard → Tokens).
+# Every other secret below is copied to Fly only if it is set in GitHub, so unset ones never overwrite Fly.
+on:
+  workflow_dispatch:
+    inputs:
+      org:
+        description: "Fly organization slug (only used the first time, to create the app)"
+        default: "personal"
+        type: string
+
+concurrency: deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Check the Fly token is present
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN repository secret is not set (Settings → Secrets and variables → Actions)"; exit 1; fi
+          echo "APP=$(grep -m1 '^app' fly.toml | cut -d'"' -f2)" >> "$GITHUB_ENV"
+          echo "REGION=$(grep -m1 '^primary_region' fly.toml | cut -d'"' -f2)" >> "$GITHUB_ENV"
+
+      - name: Create the app and its data volume if missing
+        run: |
+          flyctl status --app "$APP" >/dev/null 2>&1 || flyctl apps create "$APP" --org "${{ inputs.org }}"
+          if [ "$(flyctl volumes list --app "$APP" --json | jq 'length')" = "0" ]; then
+            flyctl volumes create ship_data --app "$APP" --region "$REGION" --size 1 --yes
+          fi
+
+      - name: Copy secrets from GitHub to Fly
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_PHONE_NUMBER_ID: ${{ secrets.META_PHONE_NUMBER_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          META_VERIFY_TOKEN: ${{ secrets.META_VERIFY_TOKEN }}
+          META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
+        run: |
+          : > secrets.env
+          for k in ANTHROPIC_API_KEY DATABASE_URL META_ACCESS_TOKEN META_PHONE_NUMBER_ID META_APP_SECRET META_VERIFY_TOKEN META_GRAPH_VERSION; do
+            if [ -n "${!k}" ]; then printf '%s=%s\n' "$k" "${!k}" >> secrets.env; echo "will set $k"; fi
+          done
+          # --stage: applied by the deploy below instead of restarting the machine twice.
+          if [ -s secrets.env ]; then flyctl secrets import --app "$APP" --stage < secrets.env; fi
+          rm -f secrets.env
+
+      - name: Migrate the database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "$DATABASE_URL" ]; then pnpm db:migrate; else echo "no DATABASE_URL: the ship uses the JSON store on the ship_data volume"; fi
+
+      - run: flyctl deploy --app "$APP" --remote-only
+
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS "https://$APP.fly.dev/health"; then
+              echo; echo "✅ Live. Meta callback URL: https://$APP.fly.dev/webhooks/meta"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::https://$APP.fly.dev/health did not answer"; exit 1

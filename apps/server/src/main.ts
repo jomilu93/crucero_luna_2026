@@ -24,7 +24,7 @@ if (env.DATABASE_URL) {
   log("store: postgres");
 } else {
   const mem = new MemoryStore({ file: env.CRUCERO_DATA_FILE || ".data/crucero.json" });
-  if (!mem.snapshot().people.length) seedSample(mem);
+  if (!mem.snapshot().people.length && env.SEED_SAMPLE !== "off") seedSample(mem);
   store = mem;
   log(`store: json file (${env.CRUCERO_DATA_FILE || ".data/crucero.json"}) — dev only`);
 }
