@@ -9,6 +9,8 @@ export interface TemplateOutbox extends Outbox {
   sendTemplate?(to: Person, kind: TemplateKind, variables: Record<string, string>): Promise<void>;
   /** Quick-reply buttons (max 3) under a short body; only valid inside an open 24h window. */
   sendInteractive?(to: Person, body: string, buttons: { id: string; title: string }[]): Promise<void>;
+  /** False for passengers this channel cannot message (e.g. WhatsApp-boarded ones on Telegram); skips paid work. */
+  canReach?(to: Person): boolean;
 }
 
 /** Payload parked behind the morning template knock. */
@@ -124,6 +126,7 @@ export async function tick(deps: SchedulerDeps, now: Date): Promise<TickReport> 
     const key = `${person.id}:${today}`;
     if (await store.wasDelivered("morning", key)) continue;
     if (person.muted) continue;
+    if (outbox.canReach && !outbox.canReach(person)) continue; // don't pay for a morning show nobody can receive
     if (person.role === "kid" && !person.phoneE164) continue; // kids without a phone get theirs via the guardian's message
     try {
       const msg = await deps.writeMorning(person, today, now);

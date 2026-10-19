@@ -3,6 +3,7 @@ import { buildPersonalCalendar, type ChatService } from "@crucero/agent";
 import type { Store } from "@crucero/db";
 import { parseMetaWebhook, validateMetaSignature } from "./meta.js";
 import { privacyPolicyHtml } from "./privacy.js";
+import { parseTelegramUpdate } from "./telegram.js";
 import { parseTwilioInbound, validateTwilioSignature } from "./twilio.js";
 
 export interface RouterDeps {
@@ -18,6 +19,11 @@ export interface RouterDeps {
   metaPhoneNumberId?: string;
   /** Who guests contact about their data, shown on /privacy. */
   privacyContact?: string;
+  /** Telegram: the secret Telegram echoes in X-Telegram-Bot-Api-Secret-Token, and the button-tap acknowledger. */
+  telegramSecret?: string;
+  answerTelegramCallback?: (callbackQueryId: string) => Promise<void>;
+  /** Which webhook routes are live; the others answer 404. Default: all. */
+  webhooks?: ("meta" | "twilio" | "telegram")[];
   log?: (line: string) => void;
 }
 
@@ -54,6 +60,8 @@ const send = (res: ServerResponse, status: number, body: string, type = "text/pl
 /**
  * Routes:
  *   GET  /health                 → ok
+ *   GET  /privacy                → the public privacy policy
+ *   POST /webhooks/telegram      → Telegram bot updates (secret-token header, acks fast, answers asynchronously)
  *   POST /webhooks/twilio        → WhatsApp inbound via Twilio (acks fast, answers asynchronously)
  *   GET  /webhooks/meta          → Meta webhook verification handshake
  *   POST /webhooks/meta          → WhatsApp inbound via Meta Cloud API (acks fast, answers asynchronously)
@@ -62,13 +70,39 @@ const send = (res: ServerResponse, status: number, body: string, type = "text/pl
 export function createRouter(deps: RouterDeps) {
   const log = deps.log ?? (() => {});
   const recent = new RecentIds();
+  const live = (hook: "meta" | "twilio" | "telegram") => !deps.webhooks || deps.webhooks.includes(hook);
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", deps.publicUrl);
     try {
       if (req.method === "GET" && url.pathname === "/health") return send(res, 200, "ok");
       if (req.method === "GET" && url.pathname === "/privacy") return send(res, 200, privacyPolicyHtml(deps.privacyContact), "text/html; charset=utf-8");
 
-      if (req.method === "POST" && url.pathname === "/webhooks/twilio") {
+      if (req.method === "POST" && url.pathname === "/webhooks/telegram" && live("telegram")) {
+        const token = req.headers["x-telegram-bot-api-secret-token"];
+        if (!deps.telegramSecret || token !== deps.telegramSecret) {
+          log("telegram webhook rejected: bad or missing secret token");
+          return send(res, 403, "bad secret");
+        }
+        let update;
+        try {
+          update = parseTelegramUpdate(JSON.parse(await readBody(req, 1024 * 1024)));
+        } catch {
+          return send(res, 400, "bad json");
+        }
+        send(res, 200, "ok"); // Telegram retries until it gets a 200; everything else happens after.
+        if (!update || recent.seen(`tg:${update.updateId}`)) return;
+        if (update.callbackQueryId) deps.answerTelegramCallback?.(update.callbackQueryId).catch((err) => log(`telegram answerCallbackQuery ERROR ${err instanceof Error ? err.message : err}`));
+        const m = update.message;
+        if (!m) return;
+        log(`telegram ${m.phoneE164}: ${m.buttonPayload ? `[button:${m.buttonPayload}]` : m.text.slice(0, 60)}`);
+        deps.chat
+          .handle(m)
+          .then((r) => log(`telegram ${m.phoneE164} → ${r.person.name}: ${r.reply ? r.reply.slice(0, 80) : r.releasedMorning ? "[morning released]" : "[no reply]"}`))
+          .catch((err) => log(`telegram ${m.phoneE164} ERROR ${err instanceof Error ? err.message : err}`));
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/webhooks/twilio" && live("twilio")) {
         const raw = await readBody(req);
         const params = Object.fromEntries(new URLSearchParams(raw));
         if (deps.twilioAuthToken) {
@@ -87,7 +121,7 @@ export function createRouter(deps: RouterDeps) {
         return;
       }
 
-      if (url.pathname === "/webhooks/meta") {
+      if (url.pathname === "/webhooks/meta" && live("meta")) {
         if (req.method === "GET") {
           const mode = url.searchParams.get("hub.mode");
           const token = url.searchParams.get("hub.verify_token");

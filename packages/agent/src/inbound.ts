@@ -8,12 +8,12 @@ export interface Responder {
     passenger: Person,
     text: string,
     history: BetaMessageParam[],
-    opts?: { channel?: "cli" | "whatsapp" | "web" | "voice" },
+    opts?: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice" },
   ): Promise<{ text: string; history: BetaMessageParam[] }>;
 }
 
 export interface InboundMessage {
-  /** E.164 phone, e.g. +15551234567 (the "whatsapp:" prefix stripped). */
+  /** Channel address: E.164 phone for WhatsApp (e.g. +15551234567), `tg:<chat id>` for Telegram. */
   phoneE164: string;
   text: string;
   /** WhatsApp profile name, used only to seed a new passenger's name. */
@@ -21,7 +21,7 @@ export interface InboundMessage {
   /** Quick-reply button payload, when the message is a tap rather than typed text. */
   buttonPayload?: string;
   mediaUrl?: string;
-  channel?: "whatsapp" | "web" | "voice";
+  channel?: "whatsapp" | "telegram" | "web" | "voice";
 }
 
 export interface ChatServiceOptions {

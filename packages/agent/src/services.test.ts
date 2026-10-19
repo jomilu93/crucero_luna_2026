@@ -195,6 +195,13 @@ describe("scheduler tick", () => {
     expect((await tick(deps, new Date(now.getTime() + 60_000))).sponsorNudges).toEqual([]);
   });
 
+  it("skips the morning show for passengers the channel cannot reach", async () => {
+    const now = new Date(mx("2026-12-27", "07:30"));
+    const { deps } = setup(now);
+    const r = await tick({ ...deps, outbox: { ...deps.outbox, canReach: (p: Person) => p.id === "sofia" } }, now);
+    expect(r.mornings).toEqual(["sofia"]);
+  });
+
   it("sends nothing proactive to muted passengers", async () => {
     const morning = new Date(mx("2026-12-27", "07:30"));
     const a = setup(morning);
