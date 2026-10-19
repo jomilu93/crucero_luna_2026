@@ -60,6 +60,11 @@ describe("meta helpers", () => {
     });
     expect(statusOnly.messages).toEqual([]);
     expect(statusOnly.statuses).toEqual([{ id: "wamid.9", status: "read", recipient: "1555" }]);
+    const failed = parseMetaWebhook({
+      object: "whatsapp_business_account",
+      entry: [{ changes: [{ field: "messages", value: { statuses: [{ id: "wamid.8", status: "failed", recipient_id: "1555", errors: [{ code: 131047, title: "Re-engagement message" }] }] } }] }],
+    });
+    expect(failed.statuses[0].error).toBe("131047 Re-engagement message");
     expect(parseMetaWebhook({ object: "page" }).messages).toEqual([]);
   });
   it("truncates button titles to 20 chars", () => {
