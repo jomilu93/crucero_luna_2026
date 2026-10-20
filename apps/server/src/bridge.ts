@@ -74,6 +74,8 @@ export function phoneBridgePage(o: PhoneBridgeOpts): string {
     tvLive: es ? "¡En la tele! Mantén presionado y habla." : "On the TV! Hold and speak.",
     tvGone: es ? "La tele se desconectó." : "The TV disconnected.",
     end: es ? "Colgar" : "Hang up",
+    network: es ? "Se cayó la conexión de video." : "The video connection dropped.",
+    dropped: es ? "El Puente cortó la llamada." : "The Bridge ended the call.",
     tvNote: es ? "Tu teléfono es el micrófono; el Capitán responde en la tele." : "Your phone is the mic; the Capitán answers on the TV.",
   };
   const face = o.portraitUrl ? `<img src="${esc(o.portraitUrl)}" alt="">` : `<div class="ph">🧑‍✈️</div>`;
@@ -106,6 +108,19 @@ async function post(path) {
   return j;
 }
 let client = null, timer = null, muted = false;
+const CLOSED = {
+  CONNECTION_CLOSED_CODE_NORMAL: S.ended,
+  CONNECTION_CLOSED_CODE_MICROPHONE_PERMISSION_DENIED: S.mic,
+  CONNECTION_CLOSED_CODE_WEBRTC_FAILURE: S.network,
+  CONNECTION_CLOSED_CODE_SIGNALLING_CLIENT_CONNECTION_FAILURE: S.network,
+};
+/** Tells the server why the call ended, so it shows up in fly logs. */
+const report = (event, code, details) =>
+  fetch(BASE + "/bridge/log", { method: "POST", body: new URLSearchParams({ event, code: code || "", details: details || "" }) }).catch(() => {});
+function closed(code, details) {
+  report("closed", code, details);
+  hangup((CLOSED[code] || S.dropped) + (details ? " (" + details + ")" : ""));
+}
 function hangup(msg) {
   clearTimeout(timer);
   try { client && client.stopStreaming(); } catch {}
@@ -118,15 +133,16 @@ $("call").onclick = async () => {
   try {
     const { sessionToken } = await post("/bridge/session");
     client = createClient(sessionToken);
-    client.addListener("CONNECTION_CLOSED", () => hangup());
+    client.addListener("CONNECTION_CLOSED", closed);
+    client.addListener("SERVER_WARNING", (m) => { report("warning", "", m); say(m); });
     client.addListener("MIC_PERMISSION_DENIED", () => hangup(S.mic));
     client.addListener("VIDEO_PLAY_STARTED", () => say(""));
     $("live").style.display = "block";
     await client.streamToVideoElement("cap");
     timer = setTimeout(() => hangup(), ${MAX_CALL_MS});
-  } catch (e) { hangup(e.message); }
+  } catch (e) { report("error", "", e.message); hangup(e.message); }
 };
-$("end").onclick = () => hangup();
+$("end").onclick = () => { report("hangup", "", ""); hangup(); };
 $("mute").onclick = () => {
   if (!client) return;
   muted = !muted;
@@ -211,9 +227,12 @@ function end() {
   client = ws = ctx = null;
   $("bridge").style.display = "none";
 }
+const report = (event, code, details) =>
+  fetch("/tv/" + KEY + "/log", { method: "POST", body: new URLSearchParams({ event, code: code || "", details: details || "" }) }).catch(() => {});
 async function begin(sessionToken, who, audio) {
   client = createClient(sessionToken);
-  client.addListener("CONNECTION_CLOSED", end);
+  client.addListener("CONNECTION_CLOSED", (code, details) => { report("closed", code, details); end(); });
+  client.addListener("SERVER_WARNING", (m) => report("warning", "", m));
   $("bridgeWho").textContent = "🔴 " + who;
   $("bridge").style.display = "block";
   await client.streamToVideoElement("tvcap", audio);

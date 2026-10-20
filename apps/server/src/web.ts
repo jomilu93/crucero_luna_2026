@@ -98,6 +98,7 @@ const T = {
     live: "Capitán en vivo", liveReady: "Listo para videollamadas", liveNot: "Falta configurar", paint: "Pintar un retrato",
     painting: "El Capitán posa para el retrato… (~20 s)", useThis: "Usar este", agent: "Agente de voz (ElevenLabs)",
     agentBtn: "Configurar agente de voz", agentRedo: "Volver a configurar", voiceId: "ID de voz", voiceHelp: "Elige una voz en español en la biblioteca de ElevenLabs y pega su ID.",
+    diagnose: "Diagnóstico de llamadas", diagnoseHelp: "Revisa la configuración real del agente en ElevenLabs y por qué terminaron las últimas llamadas.", diagnoseBtn: "Diagnosticar",
     testCall: "Probar llamada", portraits: "Retratos del Capitán", avatarHelp: "Pinta retratos y elige uno: se convierte en su avatar en vivo.",
   },
   en: {
@@ -123,6 +124,7 @@ const T = {
     live: "Live Capitán", liveReady: "Ready for video calls", liveNot: "Needs setup", paint: "Paint a portrait",
     painting: "The Capitán is posing for his portrait… (~20 s)", useThis: "Use this one", agent: "Voice agent (ElevenLabs)",
     agentBtn: "Set up the voice agent", agentRedo: "Set it up again", voiceId: "Voice ID", voiceHelp: "Pick a Spanish voice in the ElevenLabs voice library and paste its ID.",
+    diagnose: "Call diagnostics", diagnoseHelp: "Checks the agent's real configuration on ElevenLabs and why the last calls ended.", diagnoseBtn: "Diagnose",
     testCall: "Test call", portraits: "The Capitán's portraits", avatarHelp: "Paint portraits and pick one: it becomes his live avatar.",
   },
 } as const satisfies Record<"es" | "en", Record<string, string>>;
@@ -271,7 +273,7 @@ details.card summary .ic.go{margin-left:auto;transition:transform .2s}details[op
 .callcard .grow{flex:1}.callcard .m{color:rgba(255,255,255,.85)}.callcard .ic.go{color:#fff}
 .portraits{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.portraits form{position:relative;margin:0}.portraits img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:14px;display:block}
 .portraits button{position:absolute;left:6px;right:6px;bottom:6px;padding:6px;font-size:12px;border-radius:10px}.portraits .use img{outline:3px solid var(--gold);outline-offset:2px}
-.ok{color:var(--ok);font-weight:700}.no{color:var(--warn);font-weight:700}
+.ok{color:var(--ok);font-weight:700}.diag{white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:12px;padding:10px;margin:10px 0 0}.no{color:var(--warn);font-weight:700}
 .empty{text-align:center;padding:28px 18px;color:var(--muted)}.empty .e{font-size:40px}
 `;
 
@@ -453,6 +455,11 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
       back("", out);
       return true;
     }
+    if (sub === "/bridge/log" && deps.voice) {
+      deps.voice.clientEvent(viewer.name, (f.get("event") ?? "").slice(0, 20), (f.get("code") ?? "").slice(0, 80), (f.get("details") ?? "").slice(0, 300));
+      json(res, 200, { ok: true });
+      return true;
+    }
     if ((sub === "/bridge/session" || sub === "/bridge/tv") && deps.voice) {
       try {
         json(res, 200, sub === "/bridge/tv" ? await deps.voice.requestTvCall(viewer) : await deps.voice.startCall(viewer));
@@ -461,13 +468,16 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
       }
       return true;
     }
-    const vadm = sub.match(/^\/admin\/voice\/(paint|avatar|agent|voiceid)$/);
+    const vadm = sub.match(/^\/admin\/voice\/(paint|avatar|agent|voiceid|diagnose)$/);
     if (vadm && admin && deps.voice) {
       let out: string = s.saved;
       try {
         if (vadm[1] === "paint") await deps.voice.paintPortrait();
         else if (vadm[1] === "avatar") await deps.voice.useAvatar(f.get("url") ?? "");
         else if (vadm[1] === "agent") await deps.voice.setupAgent();
+        else if (vadm[1] === "diagnose") {
+          await deps.store.setSetting("voice_diagnosis", { at: now.toISOString(), lines: await deps.voice.diagnose() });
+        }
         else await deps.voice.setVoice((f.get("voice_id") ?? "").trim());
       } catch (err) {
         out = `ERROR: ${err instanceof Error ? err.message : err}`;
@@ -676,6 +686,7 @@ ${canManage && live ? `<form class="card pad" method="post" action="/c/${esc(tok
     const liveSection = async () => {
       if (!deps.voice) return "";
       const v = await deps.voice.status();
+      const diag = await deps.store.getSetting<{ at: string; lines: string[] }>("voice_diagnosis");
       const a = `/c/${esc(token)}/admin/voice`;
       const mark = (ok: boolean, label: string) => `<div><span class="${ok ? "ok" : "no"}">${ok ? "✓" : "✗"}</span> ${label}</div>`;
       const portraits = v.portraits.length
@@ -692,7 +703,10 @@ ${v.ready ? `<div class="actions"><a class="btn" href="/c/${esc(token)}/bridge">
 <div class="card pad"><div class="t" style="font-size:16px">${s.agent}</div>${v.agentId ? `<div class="m">agent ${esc(v.agentId)}</div>` : ""}
 <form method="post" action="${a}/agent" class="actions"><button class="alt"${v.elevenLabs ? "" : " disabled"}>${v.agentId ? s.agentRedo : s.agentBtn}</button></form>
 <form method="post" action="${a}/voiceid"><label>${s.voiceId}</label><div class="actions" style="margin-top:0"><input name="voice_id" value="${esc(v.voiceId)}" style="flex:1"><button class="small alt">${s.save}</button></div>
-<div class="m" style="margin-top:6px">${s.voiceHelp} <a href="https://elevenlabs.io/app/voice-library?language=es" target="_blank" rel="noopener">ElevenLabs ↗</a></div></form></div>`;
+<div class="m" style="margin-top:6px">${s.voiceHelp} <a href="https://elevenlabs.io/app/voice-library?language=es" target="_blank" rel="noopener">ElevenLabs ↗</a></div></form></div>
+<div class="card pad"><div class="t" style="font-size:16px">🩺 ${s.diagnose}</div><div class="m">${s.diagnoseHelp}</div>
+<form method="post" action="${a}/diagnose" class="actions" onsubmit="this.querySelector('button').textContent='…'"><button class="alt"${v.elevenLabs ? "" : " disabled"}>${s.diagnoseBtn}</button></form>
+${diag ? `<pre class="diag">${esc(diag.at.slice(11, 19))} UTC\n${diag.lines.map(esc).join("\n")}</pre>` : ""}</div>`;
     };
     const rows = everyone
       .map((p) => {

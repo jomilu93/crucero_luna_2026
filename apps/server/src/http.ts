@@ -93,10 +93,10 @@ export function createRouter(deps: RouterDeps) {
     try {
       if (req.method === "GET" && url.pathname === "/health") return send(res, 200, "ok");
       if (url.pathname.startsWith("/c/") && deps.web && (await handleWeb(deps.web, req, res, url))) return;
-      const tv = url.pathname.match(/^\/tv\/([A-Za-z0-9_-]+)(\/data\.json|\/call\.json|\/call)?$/);
-      if ((req.method === "GET" || (req.method === "POST" && tv?.[2] === "/call")) && tv && deps.tv) {
+      const tv = url.pathname.match(/^\/tv\/([A-Za-z0-9_-]+)(\/data\.json|\/call\.json|\/call|\/log)?$/);
+      if ((req.method === "GET" || (req.method === "POST" && (tv?.[2] === "/call" || tv?.[2] === "/log"))) && tv && deps.tv) {
         if (tv[1] !== deps.tv.key) return send(res, 404, "not found");
-        return serveTv(deps.tv, res, tv[2] ?? "", req.method);
+        return serveTv(deps.tv, res, tv[2] ?? "", req.method, req.method === "POST" ? await readBody(req, 8 * 1024) : "");
       }
       if (req.method === "POST" && url.pathname === "/v1/chat/completions" && deps.voice) {
         return deps.voice.completions(req, res, await readBody(req, 2 * 1024 * 1024));

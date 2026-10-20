@@ -20,7 +20,14 @@ function fakeVendors() {
     const reply = (o: unknown) => new Response(JSON.stringify(o), { status: url.includes("agents/create") ? 200 : 200 });
     if (url.includes("/v1/convai/secrets")) return reply({ type: "stored", name: body.name, secret_id: "sec_1" });
     if (url.includes("/v1/convai/agents/create")) return reply({ agent_id: "agent_1" });
+    if (url.includes("/v1/convai/agents/") && (init.method ?? "GET") === "GET")
+      return reply({
+        conversation_config: { agent: { language: "es", prompt: { llm: "custom-llm", custom_llm: { url: "https://ship.test/v1/chat/completions" } } }, tts: { voice_id: "v1", model_id: "eleven_flash_v2_5" } },
+        platform_settings: { overrides: { custom_llm_extra_body: false, conversation_config_override: { agent: { first_message: true, language: true } } } },
+      });
     if (url.includes("/v1/convai/agents/")) return reply({});
+    if (url.includes("/v1/convai/conversations?")) return reply({ conversations: [{ conversation_id: "conv_12345678", status: "failed", call_duration_secs: 0 }] });
+    if (url.includes("/v1/convai/conversations/")) return reply({ transcript: [], metadata: { termination_reason: "Custom LLM extra body override is not allowed for this AI agent." } });
     if (url.includes("get-signed-url")) return reply({ signed_url: "wss://eleven/signed" });
     if (url.endsWith("/v1/avatars")) return new Response(JSON.stringify({ id: "avatar_1", imageUrl: body.imageUrl }), { status: 201 });
     if (url.endsWith("/v1/auth/session-token")) return reply({ sessionToken: "anam_session" });
@@ -70,6 +77,8 @@ describe("setup from the Admin tab", () => {
     expect(agent.conversation_config.agent.prompt).toMatchObject({ llm: "custom-llm", custom_llm: { url: "https://ship.test/v1/chat/completions", api_key: { secret_id: "sec_1" } } });
     expect(agent.platform_settings.overrides.conversation_config_override.agent).toEqual({ first_message: true, language: true });
     expect(agent.platform_settings.overrides.custom_llm_extra_body).toBe(true);
+    expect(agent.conversation_config.agent.prompt.prompt).toContain("[session:{{cl_session}}]");
+    expect(agent.conversation_config.agent.dynamic_variables.dynamic_variable_placeholders).toEqual({ cl_session: "none" });
     expect(await store.getSetting("voice_agent_id")).toBe("agent_1");
     await voice.setVoice("VoiceIdEspanol123");
     expect(calls.at(-1)).toMatchObject({ url: "https://api.elevenlabs.io/v1/convai/agents/agent_1", method: "PATCH" });
@@ -100,10 +109,12 @@ describe("a call", () => {
     expect(anam.url).toBe("https://api.anam.ai/v1/auth/session-token");
     expect(anam.body.personaConfig).toMatchObject({ avatarId: "avatar_1" });
     const el = anam.body.environment.elevenLabsAgentSettings;
-    expect(el).toMatchObject({ signedUrl: "wss://eleven/signed", agentId: "agent_1", userId: "diego" });
+    expect(el).toMatchObject({ signedUrl: "wss://eleven/signed", agentId: "agent_1" });
+    expect(el.customLlmExtraBody).toBeUndefined(); // needs an override permission the agent may lack (1008)
+    expect(el.dynamicVariables.cl_session).toBe(el.userId);
     expect(el.conversationConfigOverride.agent).toMatchObject({ language: "en", first_message: expect.stringMatching(/^Ahoy, Diego!/) });
-    expect((await voice.personFromSession(el.customLlmExtraBody.session))?.id).toBe("diego");
-    expect(await voice.personFromSession(el.customLlmExtraBody.session.replace(/.$/, "x"))).toBeUndefined();
+    expect((await voice.personFromSession(el.userId))?.id).toBe("diego");
+    expect(await voice.personFromSession(el.userId.replace(/.$/, "x"))).toBeUndefined();
     await store.setSetting("paused", true);
     await expect(voice.startCall(diego)).rejects.toThrow(/paused/);
   });
@@ -136,7 +147,7 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
       model: "capitan-lunatico",
       stream: true,
       messages: [{ role: "system", content: "x" }, { role: "assistant", content: "¡Ahoy!" }, { role: "user", content: "¿Qué hay hoy en la noche?" }],
-      elevenlabs_extra_body: { session: ctx.voice.sessionFor(sofia) },
+      user_id: ctx.voice.sessionFor(sofia),
     });
     expect(res.headers.get("content-type")).toBe("text/event-stream");
     const raw = await res.text();
@@ -149,6 +160,30 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
     expect(raw.trim().endsWith("data: [DONE]")).toBe(true);
     expect(ctx.heard.at(-1)).toEqual({ name: "Sofía Luna", text: "¿Qué hay hoy en la noche?", channel: "voice" });
     expect((await ctx.store.getConversation("sofia"))?.history.length).toBeGreaterThan(0); // shared with the chat
+  });
+
+  it("finds the passenger from the prompt's session variable when user_id is missing, and notes unknown callers", async () => {
+    const diego = (await ctx.store.getPerson("diego"))!;
+    const ask = (system: string) =>
+      complete(ctx.voice.llmSecret(), { stream: true, messages: [{ role: "system", content: system }, { role: "user", content: "hola" }] }).then((r) => r.text());
+    await ask(`You are Capitán Lunático. [session:${ctx.voice.sessionFor(diego)}]`);
+    expect(ctx.heard.at(-1)).toMatchObject({ name: "Diego Luna", text: "hola" });
+    expect(await ask("You are Capitán Lunático. [session:none]")).toContain("se cortó la señal");
+    const diag = (await ctx.voice.diagnose()).join("\n");
+    expect(diag).toMatch(/custom LLM hit without a valid passenger session/);
+    expect(diag).toMatch(/custom LLM refused: wrong API key/);
+  });
+
+  it("diagnoses the live agent and the last conversation's end reason", async () => {
+    ctx.voice.clientEvent("Sofía Luna", "closed", "CONNECTION_CLOSED_CODE_SERVER_CLOSED_CONNECTION", "agent ended");
+    const lines = (await ctx.voice.diagnose()).join("\n");
+    expect(lines).toMatch(/agent llm: custom-llm → https:\/\/ship\.test\/v1\/chat\/completions ✓/);
+    expect(lines).toMatch(/extra body ✗ · first message ✓ · language ✓/);
+    expect(lines).toMatch(/conversation 12345678 · failed · 0 s · 0 turns · ended: Custom LLM extra body override is not allowed/);
+    expect(lines).toMatch(/call closed \(Sofía Luna\) SERVER_CLOSED_CONNECTION: agent ended/);
+    const tvLog = await fetch(`${base}/tv/${tvKey(SECRET)}/log`, { method: "POST", body: new URLSearchParams({ event: "closed", code: "X", details: "tv detail" }) });
+    expect(tvLog.status).toBe(200);
+    expect((await ctx.voice.diagnose()).join("\n")).toMatch(/call closed \(TV\) X: tv detail/);
   });
 
   it("hands a phone's call to the TV once and relays the phone's mic to it", async () => {
