@@ -69,6 +69,7 @@ describe("setup from the Admin tab", () => {
     const agent = calls[1].body;
     expect(agent.conversation_config.agent.prompt).toMatchObject({ llm: "custom-llm", custom_llm: { url: "https://ship.test/v1/chat/completions", api_key: { secret_id: "sec_1" } } });
     expect(agent.platform_settings.overrides.conversation_config_override.agent).toEqual({ first_message: true, language: true });
+    expect(agent.platform_settings.overrides.custom_llm_extra_body).toBe(true);
     expect(await store.getSetting("voice_agent_id")).toBe("agent_1");
     await voice.setVoice("VoiceIdEspanol123");
     expect(calls.at(-1)).toMatchObject({ url: "https://api.elevenlabs.io/v1/convai/agents/agent_1", method: "PATCH" });
