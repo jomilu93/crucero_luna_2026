@@ -50,6 +50,19 @@ describe("ChatService", () => {
     return { store, svc, sent };
   }
 
+  it("has Manpaty greet a new passenger with a photo before the Capitán's first reply, once", async () => {
+    const store = new MemoryStore({ now: () => at });
+    seedSample(store);
+    const sent: { to: string; text: string; mediaUrl?: string }[] = [];
+    const outbox: TemplateOutbox = { send: async (to, text, opts) => void sent.push({ to: to === "everyone" ? "everyone" : to.id, text, mediaUrl: opts?.mediaUrl }), sendTemplate: async () => {} };
+    const svc = new ChatService(store, echoResponder, outbox, { now: () => at, welcomePhotoUrl: "https://ship.test/manpaty.png" });
+    const r = await svc.handle({ phoneE164: "tg:42", text: "hola", profileName: "Lupita", channel: "telegram" });
+    expect(sent[0]).toMatchObject({ to: r.person.id, mediaUrl: "https://ship.test/manpaty.png", text: expect.stringMatching(/Manpaty, Primer Oficial del Moon of the Seas/) });
+    expect(sent[1]).toMatchObject({ text: "echo(Lupita): hola" });
+    await svc.handle({ phoneE164: "tg:42", text: "otra vez" });
+    expect(sent.filter((m) => m.mediaUrl)).toHaveLength(1);
+  });
+
   it("boards an unknown number using the WhatsApp profile name", async () => {
     const { svc, store, sent } = setup();
     const r = await svc.handle({ phoneE164: "+15559990000", text: "hola", profileName: "Lupita" });

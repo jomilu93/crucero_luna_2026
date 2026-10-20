@@ -125,6 +125,18 @@ describe("web app and TV routes", () => {
     await store.updatePerson("sofia", { admin: false });
   });
 
+  it("serves Manpaty as SVG and PNG, and shows him on the home page", async () => {
+    const svg = await fetch(`${base}/manpaty.svg?pose=cheer`);
+    expect(svg.headers.get("content-type")).toBe("image/svg+xml");
+    expect(await svg.text()).toContain("<svg");
+    const png = await fetch(`${base}/manpaty.png`);
+    expect([...new Uint8Array(await png.arrayBuffer())].slice(0, 4)).toEqual(PNG);
+    const home = await (await fetch(`${base}/c/${await token("valeria")}`)).text();
+    expect(home).toContain("/manpaty.svg");
+    expect(home).toContain("anteriormente Fondo de Cristal Victoria");
+    expect(home).toContain("MOON OF THE SEAS");
+  });
+
   it("guards TV mode with its key and serves now/next data", async () => {
     expect((await fetch(`${base}/tv/wrong`)).status).toBe(404);
     expect(await (await fetch(`${base}/tv/${tvKey(SECRET)}`)).text()).toContain("EL PUENTE");

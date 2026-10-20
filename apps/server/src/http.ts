@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { buildPersonalCalendar, type ChatService } from "@crucero/agent";
 import type { Store } from "@crucero/db";
+import { manpatyPng, manpatySvg } from "./manpaty.js";
 import { type DiskMediaStore, mediaContentType } from "./media.js";
 import { parseMetaWebhook, validateMetaSignature } from "./meta.js";
 import { privacyPolicyHtml } from "./privacy.js";
@@ -77,6 +78,7 @@ const send = (res: ServerResponse, status: number, body: string, type = "text/pl
  *   GET  /tv/<key>               → TV mode (tv.ts); /tv/<key>/data.json for its polling
  *   GET  /tv/<key>/call.json     → a phone's "talk on the TV" call waiting for the TV; POST /tv/<key>/call → TV mic call
  *   POST /v1/chat/completions    → the Capitán as ElevenLabs' custom LLM (voice.ts; Bearer secret, SSE)
+ *   GET  /manpaty.svg|.png       → the mascot (?pose=cheer, ?bg=white for the PNG)
  *   GET  /media/<key>            → flyers stored on the local volume (before Supabase Storage)
  *   POST /webhooks/telegram      → Telegram bot updates (secret-token header, acks fast, answers asynchronously)
  *   POST /webhooks/twilio        → WhatsApp inbound via Twilio (acks fast, answers asynchronously)
@@ -114,12 +116,20 @@ export function createRouter(deps: RouterDeps) {
         return send(
           res,
           200,
-          `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Crucero Luna 2026</title>
+          `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Moon of the Seas · Crucero Luna 2026</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f4c81;color:#fff;font:18px/1.5 system-ui,sans-serif;text-align:center;padding:16px}a{color:#ffd166}</style></head>
-<body><div><div style="font-size:64px">🌙🛳️</div><h1>Crucero Luna 2026</h1><p>Acapulco · 26 dic 2026 – 2 ene 2027</p>
-${bot ? `<p><a href="https://t.me/${bot}">Habla con el Capitán Lunático en Telegram · @${bot}</a></p>` : ""}<p style="font-size:14px"><a href="/privacy">Aviso de privacidad · Privacy</a></p></div></body></html>`,
+<body><div><img src="/manpaty.svg?pose=cheer" alt="Manpaty" width="140"><h1>Moon of the Seas</h1><p style="opacity:.75;font-style:italic;margin-top:-10px">anteriormente Fondo de Cristal Victoria</p><p>Crucero Luna 2026 · Acapulco · 26 dic 2026 – 2 ene 2027</p>
+${bot ? `<p><a href="https://t.me/${bot}">Habla con el Capitán Lunáticus en Telegram · @${bot}</a></p>` : ""}<p style="font-size:14px"><a href="/privacy">Aviso de privacidad · Privacy</a></p></div></body></html>`,
           "text/html; charset=utf-8",
         );
+      }
+      if (req.method === "GET" && (url.pathname === "/manpaty.svg" || url.pathname === "/manpaty.png")) {
+        const pose = url.searchParams.get("pose") === "cheer" ? "cheer" : "wave";
+        const svg = url.pathname.endsWith(".svg");
+        const body = svg ? Buffer.from(manpatySvg({ pose })) : manpatyPng({ pose, background: url.searchParams.get("bg") === "white" ? "#ffffff" : undefined });
+        res.writeHead(200, { "Content-Type": svg ? "image/svg+xml" : "image/png", "Content-Length": body.length, "Cache-Control": "public, max-age=86400" });
+        res.end(body);
+        return;
       }
       if (req.method === "GET" && url.pathname === "/privacy") return send(res, 200, privacyPolicyHtml(deps.privacyContact), "text/html; charset=utf-8");
 

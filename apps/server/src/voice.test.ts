@@ -89,7 +89,7 @@ describe("setup from the Admin tab", () => {
     const { voice, calls, store } = setup();
     expect((await voice.status()).ready).toBe(false);
     expect(await voice.useAvatar("https://media/captain.png")).toBe("avatar_1");
-    expect(calls[0]).toMatchObject({ url: "https://api.anam.ai/v1/avatars", body: { displayName: "Capitán Lunático", imageUrl: "https://media/captain.png" } });
+    expect(calls[0]).toMatchObject({ url: "https://api.anam.ai/v1/avatars", body: { displayName: "Capitán Lunáticus", imageUrl: "https://media/captain.png" } });
     expect(calls[0].headers.Authorization).toBe("Bearer an");
     await voice.setupAgent();
     expect(await voice.status()).toMatchObject({ ready: true, avatarId: "avatar_1", agentId: "agent_1", portraitUrl: "https://media/captain.png" });
@@ -113,7 +113,7 @@ describe("a call", () => {
     expect(el).toMatchObject({ signedUrl: "wss://eleven/signed", agentId: "agent_1" });
     expect(el.customLlmExtraBody).toBeUndefined(); // needs an override permission the agent may lack (1008)
     expect(el.dynamicVariables.cl_session).toBe(el.userId);
-    expect(el.conversationConfigOverride.agent).toMatchObject({ language: "en", first_message: expect.stringMatching(/^Ahoy, Diego!/) });
+    expect(el.conversationConfigOverride.agent).toMatchObject({ language: "en", first_message: expect.stringMatching(/^Yiá sas, Diego! Capitán Lunáticus here, on the Bridge of the Moon of the Seas/) });
     expect((await voice.personFromSession(el.userId))?.id).toBe("diego");
     expect(await voice.personFromSession(el.userId.replace(/.$/, "x"))).toBeUndefined();
     await store.setSetting("paused", true);
@@ -167,9 +167,9 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
     const diego = (await ctx.store.getPerson("diego"))!;
     const ask = (system: string) =>
       complete(ctx.voice.llmSecret(), { stream: true, messages: [{ role: "system", content: system }, { role: "user", content: "hola" }] }).then((r) => r.text());
-    await ask(`You are Capitán Lunático. [session:${ctx.voice.sessionFor(diego)}]`);
+    await ask(`You are Capitán Lunáticus. [session:${ctx.voice.sessionFor(diego)}]`);
     expect(ctx.heard.at(-1)).toMatchObject({ name: "Diego Luna", text: "hola" });
-    expect(await ask("You are Capitán Lunático. [session:none]")).toContain("se cortó la señal");
+    expect(await ask("You are Capitán Lunáticus. [session:none]")).toContain("se cortó la señal");
     const diag = (await ctx.voice.diagnose()).join("\n");
     expect(diag).toMatch(/custom LLM hit without a valid passenger session/);
     expect(diag).toMatch(/custom LLM refused: wrong API key/);
@@ -222,7 +222,7 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
   it("starts a TV-mic call as the shared Bridge seat", async () => {
     const res = await fetch(`${base}/tv/${tvKey(SECRET)}/call`, { method: "POST" });
     expect(await res.json()).toEqual({ sessionToken: "anam_session" });
-    expect(ctx.calls.at(-1)!.body.environment.elevenLabsAgentSettings.conversationConfigOverride.agent.first_message).toMatch(/^¡Ahoy! Aquí el Capitán/);
+    expect(ctx.calls.at(-1)!.body.environment.elevenLabsAgentSettings.conversationConfigOverride.agent.first_message).toMatch(/^¡Yiá sas! Aquí el Capitán Lunáticus desde el Puente del Moon of the Seas/);
     expect(ctx.calls.at(-1)!.body.sessionOptions).toEqual({ videoWidth: 1152, videoHeight: 768, videoQuality: "high" }); // TV: landscape
     const page = await (await fetch(`${base}/tv/${tvKey(SECRET)}`)).text();
     expect(page).toContain("Hablar con el Capitán");

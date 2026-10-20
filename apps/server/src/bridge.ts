@@ -59,7 +59,7 @@ export function phoneBridgePage(o: PhoneBridgeOpts): string {
   const es = o.lang === "es";
   const S = {
     title: es ? "El Puente" : "The Bridge",
-    sub: es ? "Videollamada con el Capitán Lunático" : "Video call with Capitán Lunático",
+    sub: es ? "Videollamada desde el Puente del Moon of the Seas" : "Video call from the Bridge of the Moon of the Seas",
     call: es ? "Llamar al Capitán" : "Call the Capitán",
     tv: es ? "Hablar en la tele" : "Talk on the TV",
     back: es ? "Volver" : "Back",
@@ -80,11 +80,11 @@ export function phoneBridgePage(o: PhoneBridgeOpts): string {
   };
   const face = o.portraitUrl ? `<img src="${esc(o.portraitUrl)}" alt="">` : `<div class="ph">🧑‍✈️</div>`;
   return `<!doctype html><html lang="${o.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1f3f"><title>${S.title} · Crucero Luna 2026</title>
+<meta name="theme-color" content="#0b1f3f"><title>${S.title} · Moon of the Seas</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"><style>${PHONE_CSS}</style></head><body>
 <div class="wrap">
-  <div class="top"><a href="${esc(o.base)}">‹ ${S.back}</a><span class="sub">🌙 Crucero Luna</span></div>
-  <div class="who" id="who"><div class="ring">${face}</div><h1>Capitán Lunático</h1><div class="sub">${S.sub}</div><div class="status" id="status">${o.ready ? "" : S.notReady}</div></div>
+  <div class="top"><a href="${esc(o.base)}">‹ ${S.back}</a><span class="sub">🌙 Moon of the Seas</span></div>
+  <div class="who" id="who"><div class="ring">${face}</div><h1>Capitán Lunáticus</h1><div class="sub">${S.sub}</div><div class="status" id="status">${o.ready ? "" : S.notReady}</div></div>
   <div class="remote" id="remote"><button class="hold" id="hold"><span>🎙️</span>${S.hold}</button><div class="note">${S.tvNote}</div><div class="status" id="rstatus"></div></div>
   <div class="btns" id="btns">
     <button class="call" id="call"${o.ready ? "" : " disabled"}>📞 ${S.call}</button>
@@ -92,7 +92,7 @@ export function phoneBridgePage(o: PhoneBridgeOpts): string {
   </div>
   <div class="btns" id="rbtns" style="display:none"><button class="end" id="rend" style="margin:0 auto">✕</button></div>
 </div>
-<div class="live" id="live"><video id="cap" autoplay playsinline></video><div class="tag">🔴 Capitán Lunático</div>
+<div class="live" id="live"><video id="cap" autoplay playsinline></video><div class="tag">🔴 Capitán Lunáticus</div>
 <div class="bar"><button class="mute" id="mute">🎙️</button><button class="end" id="end">✕</button></div></div>
 <script type="module">
 import { createClient } from "${ANAM_SDK}";

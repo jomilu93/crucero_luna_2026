@@ -28,7 +28,7 @@ const SERVER_FALLBACK_BETA = "server-side-fallback-2026-07-01" as const;
 const THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01" as const;
 
 /**
- * Capitán Lunático's brain. One instance per process; `respond` is per passenger turn.
+ * Capitán Lunáticus's brain. One instance per process; `respond` is per passenger turn.
  *
  * The system prompt is only the persona, identical on every request. The volatile passenger
  * context (ship time, today's program, memory) rides at the start of each user turn as a

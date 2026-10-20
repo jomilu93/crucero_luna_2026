@@ -1,5 +1,5 @@
 /**
- * Behavioral eval for Capitán Lunático: tool calls, language, and a few content checks.
+ * Behavioral eval for Capitán Lunáticus: tool calls, language, and a few content checks.
  *
  *   pnpm eval                       # all cases
  *   pnpm eval --only signup-by-name # one case

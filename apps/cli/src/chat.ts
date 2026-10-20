@@ -1,5 +1,5 @@
 /**
- * Chat with Capitán Lunático from the terminal, as any passenger, at any ship time.
+ * Chat with Capitán Lunáticus from the terminal, as any passenger, at any ship time.
  *
  *   pnpm chat                                  # as the first passenger, now
  *   pnpm chat --as sofia --at 2026-12-28T13:00  # as Sofía, on Inocentes at 7:00 am ship time
@@ -27,7 +27,7 @@ const director = new Director(store, { outbox: consoleOutbox, now });
 let history: BetaMessageParam[] = [];
 let trace = Boolean(args.trace);
 
-console.log(`🚢 Crucero Luna 2026 · Capitán Lunático (${director.model}, effort ${director.effort})`);
+console.log(`🚢 Moon of the Seas · Capitán Lunáticus (${director.model}, effort ${director.effort})`);
 console.log(`   Passenger: ${describePerson(passenger)} · ship time ${now().toISOString()}`);
 console.log(`   Commands: /who <name|id> · /tools · /reset · /program · /quit\n`);
 

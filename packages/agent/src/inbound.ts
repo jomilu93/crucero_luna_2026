@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { type Person, type Store, isPaused, shipDate } from "@crucero/db";
+import { MASCOT_NAME, SHIP_NAME } from "./brand.js";
 import { SIGNUP_BUTTON_PREFIX, deliverMorningFull, type TemplateOutbox } from "./scheduler.js";
 
 /** What the ChatService needs from the Capitán; `Director` satisfies this. */
@@ -30,6 +31,8 @@ export interface ChatServiceOptions {
   staleAfterMs?: number;
   /** Keep at most this many messages of history. Default 30. */
   maxHistory?: number;
+  /** Sent to every new passenger before the Capitán's first reply: Manpaty greeting them at the gangway. */
+  welcomePhotoUrl?: string;
   /** ADMIN_PASSWORD: a passenger who sends exactly this (or "/admin <password>") becomes an admin. */
   adminPassword?: string;
   now?: () => Date;
@@ -48,6 +51,8 @@ const ADMIN_WELCOME = {
   es: "🔑 Acceso de administrador concedido. Puedes pedirme: el manifiesto completo, quitar a un pasajero, marcar niños y sus tutores, o pausar el barco. Tu página (escribe *mi enlace*) ahora tiene el panel de administración. Por seguridad, borra el mensaje con la contraseña.",
   en: "🔑 Admin access granted. Ask me for: the full manifest, removing a passenger, marking kids and their guardians, or pausing the ship. Your page (write *my link*) now has the admin panel. For safety, delete the message with the password.",
 } as const;
+
+const WELCOME_PHOTO_CAPTION = `🟨 ${MASCOT_NAME}, Primer Oficial del ${SHIP_NAME}, te da la bienvenida a bordo. *clink clink*`;
 
 const OFF_DUTY = {
   es: "🌙 El Capitán está fuera de servicio un momento: el barco está en pausa. ¡Vuelvo pronto!",
@@ -83,6 +88,7 @@ export class ChatService {
   private readonly staleAfterMs: number;
   private readonly maxHistory: number;
   private readonly adminPassword?: string;
+  private readonly welcomePhotoUrl?: string;
   private readonly now: () => Date;
 
   constructor(
@@ -94,6 +100,7 @@ export class ChatService {
     this.staleAfterMs = opts.staleAfterMs ?? 12 * 3600 * 1000;
     this.maxHistory = opts.maxHistory ?? 30;
     this.adminPassword = opts.adminPassword;
+    this.welcomePhotoUrl = opts.welcomePhotoUrl;
     this.now = opts.now ?? (() => new Date());
   }
 
@@ -122,7 +129,11 @@ export class ChatService {
 
   /** Handle one inbound message end to end. Returns the text that was sent back (for logs/tests). */
   async handle(msg: InboundMessage): Promise<{ person: Person; reply?: string; releasedMorning: boolean }> {
-    const { person } = await this.resolvePassenger(msg);
+    const { person, isNew } = await this.resolvePassenger(msg);
+    if (isNew && this.welcomePhotoUrl && !(await isPaused(this.store))) {
+      // Like the real screen at the apartment's door, Manpaty is the first thing a new passenger sees.
+      await this.outbox.send(person, WELCOME_PHOTO_CAPTION, { mediaUrl: this.welcomePhotoUrl, from: person }).catch(() => {});
+    }
     const channel = msg.channel ?? "whatsapp";
 
     // The admin password never reaches the model or the chat history.

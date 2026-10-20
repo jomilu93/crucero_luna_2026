@@ -4,7 +4,7 @@
  * program, rotating flyers, and QR codes that open the Capitán's chat (and sign up for "next").
  */
 import type { ServerResponse } from "node:http";
-import { headlineFor } from "@crucero/agent";
+import { SHIP_FORMER_NAME, SHIP_NAME, headlineFor } from "@crucero/agent";
 import { type Activity, type Store, CRUISE_START, dayBounds, prettyDate, prettyTime, shipDate } from "@crucero/db";
 import QRCode from "qrcode";
 import { tvBridge } from "./bridge.js";
@@ -117,7 +117,7 @@ export async function serveTv(deps: TvDeps, res: ServerResponse, sub: string, me
 }
 
 const TV_HTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Puente · Crucero Luna 2026</title>
+<title>Puente · ${SHIP_NAME}</title>
 <style>
 :root{--bg:#07131f;--panel:#0f2236;--ink:#f3f6fb;--muted:#9fb3c8;--gold:#ffd166;--accent:#f76b1c}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
@@ -135,9 +135,10 @@ li .t{font-variant-numeric:tabular-nums;color:var(--muted);min-width:9.5em}li.pa
 .right{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:2vh;min-height:0}.flyer{display:flex;align-items:center;justify-content:center;min-height:0;padding:2vh}
 .flyer img{height:100%;width:auto;max-width:100%;object-fit:contain;border-radius:1.6vh;box-shadow:0 2vh 6vh rgba(0,0,0,.5)}
 .join{display:flex;gap:1.5vw;align-items:center;font-size:2.6vh}.join img{width:14vh;height:14vh;background:#fff;border-radius:1.2vh;padding:.6vh}
-.empty{font-size:3vh;color:var(--muted)}
+.empty{font-size:3vh;color:var(--muted)}.empty.mp{display:flex;gap:1.6vw;align-items:center}.empty.mp img{height:12vh}
+.formerly{font-size:1.8vh;color:var(--muted);font-style:italic;letter-spacing:.04em}
 </style></head><body><div class="wrap">
-<header><div><div class="brand">🌙 CRUCERO LUNA 2026 · EL PUENTE</div><div class="date" id="date"></div><div class="headline" id="headline"></div></div><div class="clock" id="clock">--:--</div></header>
+<header><div><div class="brand">🌙 ${SHIP_NAME.toUpperCase()} · EL PUENTE</div><div class="formerly">anteriormente ${SHIP_FORMER_NAME}</div><div class="date" id="date"></div><div class="headline" id="headline"></div></div><div class="clock" id="clock">--:--</div></header>
 <div class="panel"><div id="now"></div><div id="next"></div><div class="label" style="margin-top:3vh" id="todayLabel">Programa de hoy</div><ul id="today"></ul></div>
 <div class="right"><div class="panel flyer" id="flyer"><div class="empty">🛳️</div></div><div class="panel join" id="join"></div></div>
 </div><script>
@@ -159,7 +160,7 @@ function render() {
   document.getElementById("todayLabel").textContent = data.showing ? "Próximo programa · " + data.showing : "Programa de hoy";
   document.getElementById("now").innerHTML = data.now.length
     ? data.now.map((a) => '<div class="label">Ahora</div><div class="big">' + h(a.emoji) + " " + h(a.title) + '</div><div class="meta">' + h(a.time) + " · " + h(a.location) + " · " + h(a.host) + "</div>").join("")
-    : '<div class="label">Ahora</div><div class="empty">Cubierta libre. ¿Quién organiza algo?</div>';
+    : '<div class="label">Ahora</div><div class="empty mp"><img src="/manpaty.svg" alt="">Cubierta libre: Manpaty espera en la pasarela. ¿Quién organiza algo?</div>';
   const n = data.next;
   document.getElementById("next").innerHTML = n
     ? '<div class="next">' + (n.qr ? '<img src="' + n.qr + '" alt="">' : "") + '<div><div class="label">Sigue · en <span class="count">' + countdown(n.startsAt) + '</span></div><div class="big">' + h(n.emoji) + " " + h(n.title) + '</div><div class="meta">' + h(n.time) + " · " + h(n.location) + " · " + h(n.host) + (n.qr ? " · escanea para apuntarte" : "") + "</div></div></div>"

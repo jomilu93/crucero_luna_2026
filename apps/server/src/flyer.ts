@@ -11,10 +11,12 @@ import { readFileSync } from "node:fs";
 import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { Resvg } from "@resvg/resvg-js";
+import { SHIP_NAME } from "@crucero/agent";
 import { type Activity, type Person, type Store, prettyDate, prettyTime, shipDate } from "@crucero/db";
 import QRCode from "qrcode";
 import satori from "satori";
 import { z } from "zod";
+import { manpatyDataUrl } from "./manpaty.js";
 import type { MediaStore } from "./media.js";
 
 export const FLYER_VIBES = ["fiesta", "zen", "retro-cruise", "kids", "gala"] as const;
@@ -139,7 +141,10 @@ export async function renderFlyerPng(l: FlyerLayout, fetchFn: typeof fetch = fet
       bg,
       shade,
       el("div", { position: "absolute", top: 56, left: 64, right: 64, display: "flex", justifyContent: "space-between", alignItems: "center" }, [
-        el("div", { fontFamily: "Baloo", fontSize: 34, letterSpacing: 4, padding: "8px 22px", borderRadius: 40, backgroundColor: "rgba(0,0,0,0.45)" }, "🌙 CRUCERO LUNA 2026"),
+        el("div", { display: "flex", alignItems: "center" }, [
+          el("img", { width: 84, height: 115, marginRight: 14 }, undefined, { src: manpatyDataUrl({ size: 84, pose: "cheer" }), width: 84, height: 115 }),
+          el("div", { fontFamily: "Baloo", fontSize: 34, letterSpacing: 4, padding: "8px 22px", borderRadius: 40, backgroundColor: "rgba(0,0,0,0.45)" }, `🌙 ${SHIP_NAME.toUpperCase()}`),
+        ]),
         el("div", { fontSize: 120 }, l.emoji),
       ]),
       el("div", { position: "absolute", left: 64, right: 64, bottom: 60, display: "flex", flexDirection: "column" }, [

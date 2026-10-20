@@ -1,5 +1,5 @@
 /**
- * Capitán Lunático's ship: one process that hosts the chat webhooks (Telegram, WhatsApp), the calendar feeds,
+ * Capitán Lunáticus's ship: one process that hosts the chat webhooks (Telegram, WhatsApp), the calendar feeds,
  * and the minute-by-minute scheduler (morning program, reminders, sponsor nudges).
  *
  * Env (see .env.example): DATABASE_URL (Postgres) or CRUCERO_DATA_FILE (dev JSON store),
@@ -125,7 +125,11 @@ log(`flyers: ${env.FAL_KEY ? `flux via fal.ai (${env.FAL_MODEL || "fal-ai/flux/d
 // Brain
 const cabinLink = (p: Parameters<typeof cabinUrl>[1]) => cabinUrl({ publicUrl, secret: webSecret }, p);
 const director = new Director(store, { client, outbox, flyers, cabinLink });
-const chat = new ChatService(store, director, outbox, { adminPassword: env.ADMIN_PASSWORD });
+// Telegram fetches the welcome photo by URL, so it only goes out when the server has a public address.
+const chat = new ChatService(store, director, outbox, {
+  adminPassword: env.ADMIN_PASSWORD,
+  welcomePhotoUrl: publicUrl.startsWith("https://") ? `${publicUrl}/manpaty.png?bg=white` : undefined,
+});
 log(env.ADMIN_PASSWORD ? "admin: password set (say it in the chat to become an admin)" : "admin: no ADMIN_PASSWORD, so nobody can become an admin from the chat");
 
 // "Call the Bridge": the Capitán's live video calls (Anam avatar + ElevenLabs voice, our brain).
