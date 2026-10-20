@@ -157,6 +157,11 @@ Capitán en vivo: **Pintar un retrato** (Flux, needs `FAL_KEY`) → **Usar este*
 **Configurar agente de voz** (creates the ElevenLabs agent pointing at this server) → paste a Spanish voice id from
 the ElevenLabs voice library → **Probar llamada**. `ELEVENLABS_AGENT_ID`, `ELEVENLABS_VOICE_ID`, `ANAM_AVATAR_ID`
 override what the Admin tab stores. On the TV, tap once to wake the Bridge (browsers need a tap before sound).
+If calls drop, Admin → Capitán en vivo → **Diagnosticar** shows the live agent config (custom LLM URL, overrides,
+voice), how the last ElevenLabs conversations ended, and recent call events (close reasons reported by the call
+pages, custom LLM hits); the same events are in `fly logs` as `voice …` lines. The caller is identified by a
+signed session sent as the ElevenLabs `user_id` (with a `{{cl_session}}` prompt variable as backup), which needs
+no override permission on the agent.
 
 ### Secrets
 

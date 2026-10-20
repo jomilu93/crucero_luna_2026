@@ -110,6 +110,8 @@ export class VoiceService {
   private readonly tvCalls = new Map<string, TvCall>();
   private readonly relays = new Map<string, { phone?: WebSocket; tv?: WebSocket }>();
   private wss?: WebSocketServer;
+  /** Recent call events (browser close reasons, custom LLM hits) for the Admin tab's diagnostics. */
+  private readonly events: string[] = [];
 
   constructor(private readonly deps: VoiceDeps) {
     this.fetchFn = deps.fetch ?? fetch;
@@ -206,9 +208,12 @@ export class VoiceService {
       conversation_config: {
         agent: {
           first_message: "¡Ahoy! Aquí el Capitán Lunático desde el Puente. ¿En qué te ayudo?",
+          dynamic_variables: { dynamic_variable_placeholders: { cl_session: "none" } },
           language: "es",
           prompt: {
-            prompt: "You are Capitán Lunático. Your replies come from the ship's own server.",
+            // {{cl_session}} is filled per call (dynamic variables need no override permission) and reaches
+            // our endpoint inside the system message: the backup way to know who is calling.
+            prompt: "You are Capitán Lunático. Your replies come from the ship's own server. [session:{{cl_session}}]",
             llm: "custom-llm",
             custom_llm: { url: `${this.deps.publicUrl}/v1/chat/completions`, model_id: "capitan-lunatico", api_key: { secret_id: secretId } },
           },
@@ -269,13 +274,14 @@ export class VoiceService {
   }
 
   /** An Anam session token for one call: avatar + ElevenLabs agent + the passenger's signed session. */
-  async startCall(person: Person): Promise<{ sessionToken: string }> {
+  async startCall(person: Person, screen: "phone" | "tv" = "phone"): Promise<{ sessionToken: string }> {
     const st = await this.status();
     if (!st.ready) throw new Error("the Capitán's video call is not set up yet (Admin tab → Capitán en vivo)");
     if (!person.admin && (await isPaused(this.deps.store))) throw new Error("the ship is paused");
     const signed = (await this.eleven(`/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(st.agentId!)}`)) as { signed_url?: string };
     if (!signed.signed_url) throw new Error("ElevenLabs returned no signed URL");
     const first = person.phoneE164 === TV_ADDRESS ? undefined : (person.nickname ?? person.name.split(" ")[0]);
+    const session = this.sessionFor(person);
     const greeting =
       person.language === "en"
         ? `Ahoy${first ? `, ${first}` : ""}! Capitán Lunático here, on the Bridge. What can I do for you?`
@@ -285,13 +291,18 @@ export class VoiceService {
       headers: { Authorization: `Bearer ${this.deps.cfg.anamKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         personaConfig: { avatarId: st.avatarId, avatarModel: "cara-4", directorNotes: { presetStyle: "warm", expressivity: 0.6 } },
+        // Cara 4's largest frames, portrait for phones and landscape for the TV, starting on the high bitrate
+        // profile instead of ramping up from a blurry one.
+        sessionOptions: { ...(screen === "tv" ? { videoWidth: 1152, videoHeight: 768 } : { videoWidth: 768, videoHeight: 1152 }), videoQuality: "high" },
         environment: {
           elevenLabsAgentSettings: {
             signedUrl: signed.signed_url,
             agentId: st.agentId,
-            userId: person.id,
+            // The signed passenger session rides as the user id, which ElevenLabs forwards to the custom LLM
+            // as user_id; unlike custom_llm_extra_body it needs no override permission on the agent.
+            userId: session,
+            dynamicVariables: { cl_session: session },
             conversationConfigOverride: { agent: { first_message: greeting, language: person.language } },
-            customLlmExtraBody: { session: this.sessionFor(person) },
           },
         },
       }),
@@ -300,13 +311,13 @@ export class VoiceService {
     if (!res.ok) throw new Error(`Anam session ${res.status}: ${body.slice(0, 200)}`);
     const sessionToken = (JSON.parse(body) as { sessionToken?: string }).sessionToken;
     if (!sessionToken) throw new Error("Anam returned no session token");
-    this.log(`voice: call for ${person.name}`);
+    this.note(`call started for ${person.name}`);
     return { sessionToken };
   }
 
   /** A phone asks the TV to take the call: the TV picks it up from pollTvCall and listens to the phone's mic. */
   async requestTvCall(person: Person): Promise<{ callId: string; relay: string }> {
-    const { sessionToken } = await this.startCall(person);
+    const { sessionToken } = await this.startCall(person, "tv");
     const id = randomBytes(9).toString("base64url");
     const key = this.relaySig(id);
     this.tvCalls.clear(); // one TV, one call
@@ -323,23 +334,77 @@ export class VoiceService {
     return undefined;
   }
 
+  /** A call event: from a browser (why Anam closed the call) or from our own endpoints. Logged and kept for the Admin tab. */
+  note(line: string): void {
+    const entry = `${this.now().toISOString().slice(11, 19)} ${line}`.slice(0, 400);
+    this.events.unshift(entry);
+    this.events.length = Math.min(this.events.length, 20);
+    this.log(`voice ${line}`);
+  }
+
+  clientEvent(who: string, event: string, code: string, details: string): void {
+    this.note(`call ${event} (${who})${code ? ` ${code.replace("CONNECTION_CLOSED_CODE_", "")}` : ""}${details ? `: ${details}` : ""}`);
+  }
+
+  /**
+   * Admin diagnostics: what the ElevenLabs agent really has configured, how the last
+   * conversations ended (ElevenLabs keeps the termination reason), and our recent call events.
+   */
+  async diagnose(): Promise<string[]> {
+    const out: string[] = [];
+    const st = await this.status();
+    out.push(`keys: elevenlabs ${st.elevenLabs ? "✓" : "✗"} · anam ${st.anam ? "✓" : "✗"} · avatar ${st.avatarId ?? "✗"} · agent ${st.agentId ?? "✗"}`);
+    if (st.elevenLabs && st.agentId) {
+      try {
+        const agent = (await this.eleven(`/v1/convai/agents/${st.agentId}`)) as any;
+        const prompt = agent?.conversation_config?.agent?.prompt ?? {};
+        const ov = agent?.platform_settings?.overrides ?? {};
+        const want = `${this.deps.publicUrl}/v1/chat/completions`;
+        out.push(`agent llm: ${prompt.llm ?? "?"} → ${prompt.custom_llm?.url ?? "no custom url"}${prompt.custom_llm?.url === want ? " ✓" : ` ✗ (expected ${want})`}`);
+        out.push(`agent overrides: extra body ${ov.custom_llm_extra_body ? "✓" : "✗"} · first message ${ov.conversation_config_override?.agent?.first_message ? "✓" : "✗"} · language ${ov.conversation_config_override?.agent?.language ? "✓" : "✗"}`);
+        out.push(`agent voice: ${agent?.conversation_config?.tts?.voice_id ?? "?"} · tts ${agent?.conversation_config?.tts?.model_id ?? "?"} · language ${agent?.conversation_config?.agent?.language ?? "?"}`);
+        const list = (await this.eleven(`/v1/convai/conversations?agent_id=${encodeURIComponent(st.agentId)}&page_size=3`)) as any;
+        for (const c of (list?.conversations ?? []).slice(0, 3)) {
+          const d = (await this.eleven(`/v1/convai/conversations/${c.conversation_id}`).catch(() => ({}))) as any;
+          const m = d?.metadata ?? {};
+          const err = m.error ? ` · error ${JSON.stringify(m.error).slice(0, 200)}` : "";
+          out.push(
+            `conversation ${String(c.conversation_id).slice(-8)} · ${c.status ?? d.status ?? "?"} · ${c.call_duration_secs ?? m.call_duration_secs ?? "?"} s · ${(d?.transcript ?? []).length} turns · ended: ${m.termination_reason || "?"}${err}`,
+          );
+        }
+        if (!(list?.conversations ?? []).length) out.push("no conversations on ElevenLabs yet: the call never reached the agent (check Anam)");
+      } catch (err) {
+        out.push(`ElevenLabs check failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    out.push(...(this.events.length ? this.events.map((e) => `event ${e}`) : ["no call events since the last deploy"]));
+    return out;
+  }
+
   // ---------- the custom LLM endpoint ElevenLabs calls ----------
 
   /** POST /v1/chat/completions (OpenAI-compatible, SSE). */
   async completions(req: IncomingMessage, res: ServerResponse, rawBody: string): Promise<void> {
     const auth = req.headers.authorization ?? "";
     if (!safeEqual(auth.replace(/^Bearer\s+/i, ""), this.llmSecret())) {
+      this.note(`custom LLM refused: ${auth ? "wrong" : "missing"} API key (Admin tab → set up the voice agent again)`);
       res.writeHead(401, { "Content-Type": "application/json" }).end(JSON.stringify({ error: { message: "bad api key" } }));
       return;
     }
-    let body: { messages?: { role: string; content: unknown }[]; elevenlabs_extra_body?: { session?: unknown } };
+    let body: { messages?: { role: string; content: unknown }[]; user_id?: unknown; elevenlabs_extra_body?: { session?: unknown } };
     try {
       body = JSON.parse(rawBody);
     } catch {
       res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: { message: "bad json" } }));
       return;
     }
-    const person = await this.personFromSession(body.elevenlabs_extra_body?.session);
+    const system = (body.messages ?? []).find((m) => m.role === "system");
+    const fromPrompt = typeof system?.content === "string" ? system.content.match(/\[session:([A-Za-z0-9._-]+)\]/)?.[1] : undefined;
+    const person =
+      (await this.personFromSession(body.user_id)) ??
+      (await this.personFromSession(fromPrompt)) ??
+      (await this.personFromSession(body.elevenlabs_extra_body?.session));
+    if (!person) this.note(`custom LLM hit without a valid passenger session (user_id ${body.user_id ? "present" : "missing"}, prompt ${fromPrompt ? "has" : "lacks"} session)`);
     const lastUser = [...(body.messages ?? [])].reverse().find((m) => m.role === "user");
     const text = typeof lastUser?.content === "string" ? lastUser.content : Array.isArray(lastUser?.content) ? lastUser.content.map((p: { text?: string }) => p.text ?? "").join(" ") : "";
 

@@ -83,7 +83,7 @@ export async function tvData(deps: TvDeps) {
   };
 }
 
-export async function serveTv(deps: TvDeps, res: ServerResponse, sub: string, method = "GET"): Promise<void> {
+export async function serveTv(deps: TvDeps, res: ServerResponse, sub: string, method = "GET", body = ""): Promise<void> {
   const json = (status: number, body: unknown) => {
     res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
     res.end(JSON.stringify(body));
@@ -92,10 +92,15 @@ export async function serveTv(deps: TvDeps, res: ServerResponse, sub: string, me
     const call = deps.voice?.pollTvCall();
     return json(200, { call: call ? { sessionToken: call.sessionToken, name: call.name, relay: `/voice/relay/${call.id}?k=${call.key}` } : null });
   }
+  if (sub === "/log" && method === "POST") {
+    const f = new URLSearchParams(body);
+    deps.voice?.clientEvent("TV", (f.get("event") ?? "").slice(0, 20), (f.get("code") ?? "").slice(0, 80), (f.get("details") ?? "").slice(0, 300));
+    return json(200, { ok: true });
+  }
   if (sub === "/call" && method === "POST") {
     if (!deps.voice) return json(503, { error: "voice is not configured" });
     try {
-      return json(200, await deps.voice.startCall(await deps.voice.tvPassenger()));
+      return json(200, await deps.voice.startCall(await deps.voice.tvPassenger(), "tv"));
     } catch (err) {
       return json(503, { error: err instanceof Error ? err.message : String(err) });
     }

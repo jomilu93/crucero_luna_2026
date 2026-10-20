@@ -74,6 +74,8 @@ export function phoneBridgePage(o: PhoneBridgeOpts): string {
     tvLive: es ? "¡En la tele! Mantén presionado y habla." : "On the TV! Hold and speak.",
     tvGone: es ? "La tele se desconectó." : "The TV disconnected.",
     end: es ? "Colgar" : "Hang up",
+    network: es ? "Se cayó la conexión de video." : "The video connection dropped.",
+    dropped: es ? "El Puente cortó la llamada." : "The Bridge ended the call.",
     tvNote: es ? "Tu teléfono es el micrófono; el Capitán responde en la tele." : "Your phone is the mic; the Capitán answers on the TV.",
   };
   const face = o.portraitUrl ? `<img src="${esc(o.portraitUrl)}" alt="">` : `<div class="ph">🧑‍✈️</div>`;
@@ -106,6 +108,19 @@ async function post(path) {
   return j;
 }
 let client = null, timer = null, muted = false;
+const CLOSED = {
+  CONNECTION_CLOSED_CODE_NORMAL: S.ended,
+  CONNECTION_CLOSED_CODE_MICROPHONE_PERMISSION_DENIED: S.mic,
+  CONNECTION_CLOSED_CODE_WEBRTC_FAILURE: S.network,
+  CONNECTION_CLOSED_CODE_SIGNALLING_CLIENT_CONNECTION_FAILURE: S.network,
+};
+/** Tells the server why the call ended, so it shows up in fly logs. */
+const report = (event, code, details) =>
+  fetch(BASE + "/bridge/log", { method: "POST", body: new URLSearchParams({ event, code: code || "", details: details || "" }) }).catch(() => {});
+function closed(code, details) {
+  report("closed", code, details);
+  hangup((CLOSED[code] || S.dropped) + (details ? " (" + details + ")" : ""));
+}
 function hangup(msg) {
   clearTimeout(timer);
   try { client && client.stopStreaming(); } catch {}
@@ -118,15 +133,16 @@ $("call").onclick = async () => {
   try {
     const { sessionToken } = await post("/bridge/session");
     client = createClient(sessionToken);
-    client.addListener("CONNECTION_CLOSED", () => hangup());
+    client.addListener("CONNECTION_CLOSED", closed);
+    client.addListener("SERVER_WARNING", (m) => { report("warning", "", m); say(m); });
     client.addListener("MIC_PERMISSION_DENIED", () => hangup(S.mic));
     client.addListener("VIDEO_PLAY_STARTED", () => say(""));
     $("live").style.display = "block";
     await client.streamToVideoElement("cap");
     timer = setTimeout(() => hangup(), ${MAX_CALL_MS});
-  } catch (e) { hangup(e.message); }
+  } catch (e) { report("error", "", e.message); hangup(e.message); }
 };
-$("end").onclick = () => hangup();
+$("end").onclick = () => { report("hangup", "", ""); hangup(); };
 $("mute").onclick = () => {
   if (!client) return;
   muted = !muted;
@@ -187,7 +203,8 @@ export function tvBridge(o: { key: string; portraitUrl?: string }): string {
 <style>
 .bridge-btn{position:fixed;left:5vw;bottom:6vh;z-index:20;display:flex;align-items:center;gap:1vw;border:0;border-radius:999px;padding:1.6vh 2.4vw;font:800 2.6vh system-ui,sans-serif;background:#16a34a;color:#fff;box-shadow:0 1vh 4vh rgba(0,0,0,.4);cursor:pointer}
 .bridge-btn img{width:5vh;height:5vh;border-radius:50%;object-fit:cover;border:2px solid #f2b632}
-.bridge{position:fixed;inset:0;z-index:30;background:#000;display:none}.bridge video{width:100%;height:100%;object-fit:contain;background:radial-gradient(circle,#12408a,#06101e)}
+.bridge{position:fixed;inset:0;z-index:30;display:none;background:radial-gradient(120% 90% at 50% 40%,#12408a 0%,#0b1f3f 55%,#06101e 100%)}
+.bridge video{position:absolute;inset:0;margin:auto;aspect-ratio:3/2;height:min(84vh,1229px);max-width:92vw;object-fit:contain;border-radius:2.4vh;background:#000;box-shadow:0 0 0 .6vh rgba(242,182,50,.55),0 3vh 10vh rgba(0,0,0,.6)}
 .bridge .who{position:absolute;top:3vh;left:3vw;background:rgba(0,0,0,.5);color:#fff;padding:1vh 1.6vw;border-radius:999px;font:700 2.4vh system-ui,sans-serif}
 .bridge .x{position:absolute;right:3vw;bottom:4vh;width:9vh;height:9vh;border-radius:50%;border:0;background:#dc2626;color:#fff;font-size:4vh;cursor:pointer}
 .unlock{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:rgba(6,16,30,.85);color:#fff;font:800 4vh system-ui,sans-serif;cursor:pointer;text-align:center}
@@ -211,9 +228,12 @@ function end() {
   client = ws = ctx = null;
   $("bridge").style.display = "none";
 }
+const report = (event, code, details) =>
+  fetch("/tv/" + KEY + "/log", { method: "POST", body: new URLSearchParams({ event, code: code || "", details: details || "" }) }).catch(() => {});
 async function begin(sessionToken, who, audio) {
   client = createClient(sessionToken);
-  client.addListener("CONNECTION_CLOSED", end);
+  client.addListener("CONNECTION_CLOSED", (code, details) => { report("closed", code, details); end(); });
+  client.addListener("SERVER_WARNING", (m) => report("warning", "", m));
   $("bridgeWho").textContent = "🔴 " + who;
   $("bridge").style.display = "block";
   await client.streamToVideoElement("tvcap", audio);
