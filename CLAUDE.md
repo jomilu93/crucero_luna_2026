@@ -58,6 +58,8 @@ reaches the model); 5 admin tools (manifest, remove passenger, kid/guardian, gra
 (custom LLM endpoint `/v1/chat/completions`, Anam sessions with `elevenLabsAgentSettings`, agent + avatar setup,
 phone→TV mic relay over `ws`), `bridge.ts` (phone call page, TV overlay; Anam JS SDK 4.27.1 from jsdelivr). Not yet
 tried against the real vendors: needs `ELEVENLABS_API_KEY` + `ANAM_API_KEY` on Fly and the Admin-tab setup.
+Live eval on this build (persona: check the host before cancelling, reply in the passenger's language): **39/40**,
+the one left a two-gag tone call.
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;
