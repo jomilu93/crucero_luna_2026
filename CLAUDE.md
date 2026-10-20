@@ -23,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (88 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (101 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -45,18 +45,18 @@ passenger (+16315551181); there is no way to remove a passenger yet.
 Then the real number (…0909, SIVICO WABA `2232002254037592`, named "SIVICO - Twilio, Inc") never delivered inbound
 webhooks despite a published app, a subscribed WABA and correct routing (CI `meta-doctor` job shows all of this), so
 the owner switched to **Telegram**: bot adapter, `tg:<chat id>` addresses, inline buttons, migration `003_telegram_channel.sql`.
+**Full-experience pilot build (2026-10-20, owner's choices):** web app + TV mode on the same Fly server (`web.ts`,
+`tv.ts`), private links handed out by the Capitán (`my_cabin_link`, HMAC of id + ICS token), flyers with Flux via
+fal.ai under our overlaid text (`flyer.ts`, satori + resvg, gradient fallback), Supabase Postgres + Storage
+(`media.ts`, disk fallback at `/media`). QR codes use `t.me/<bot>?start=signup_<id>` deep links.
 
 ## Next steps, in order
-1. **Pilot on Telegram** (owner creates the bot with @BotFather, sets `TELEGRAM_BOT_TOKEN`, deploys): read `fly logs`, fix what real conversations expose; re-run the
-   live eval after persona changes. Admin basics: remove a passenger, mark kids/guardians.
-2. **Supabase** (`DATABASE_URL` secret; the deploy workflow migrates) before the real cruise; then the real number +
-   approved templates (`WHATSAPP_TEMPLATES=on`).
-3. **Flyer renderer**: Claude writes concept + copy, an image model paints the art, we overlay title/time/host with
-   `satori`/`sharp` (3 templates: Fiesta, Zen, Retro Cruise). Store in Supabase storage; `generate_flyer` tool currently
-   only queues (`flyerUrl = pending:…`).
-4. **Web app + TV mode** (Next.js): program view, sponsor form, "my cruise", magic-link login, kiosk route for the
-   apartment TV (now/next, QR sign-up, Supabase realtime).
-5. Phase 2/3 per PLAN.md: voice notes (STT/TTS), realtime voice + avatar ("Call the Bridge"), onboarding polish,
+1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;
+   fal.ai → `FAL_KEY`; deploy; check `fly logs` (`store: postgres`, `media: supabase storage`, `flyers: flux…`,
+   `TV mode: …`). Then a first real flyer, the TV on a screen, and the web link from the bot.
+2. **Pilot** with 3–5 family members on the full experience; read `fly logs`; re-run the live eval after persona
+   changes. Admin basics still missing: pause switch, remove a passenger, mark kids/guardians.
+3. Phase 2/3 per PLAN.md: voice notes (STT/TTS), realtime voice + avatar ("Call the Bridge"), onboarding polish,
    admin page, awards ceremony.
 
 ## Open decisions for the owner

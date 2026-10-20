@@ -254,8 +254,8 @@ number recently deleted from WhatsApp can trigger a cooldown of up to 24 hours.
       language default, apartment "deck map".
 - [x] Phone number bought (Twilio US local; reusable as the Meta number once any Twilio WhatsApp sender registration on it is removed).
 - [ ] Meta for Developers app + Business portfolio "Crucero Luna"; test number working with 5 pilot phones; System User permanent token; real number added; the three templates submitted (`morning_knock` with 3 quick-reply buttons, `activity_reminder`, `new_activity`).
-- [ ] **Oct 31 gate:** test template delivered to your own phone from the real number, or
-      flip the primary channel to Telegram.
+- [x] **Oct 31 gate:** decided early (Oct 19): the real number sits in a Twilio-created WABA whose inbound never
+      reached the app, so the primary channel is **Telegram**; WhatsApp is parked in the code.
 - [ ] Create Supabase project, Anthropic API key with a monthly spend cap, image-gen key,
       ElevenLabs key. Vercel + Fly.io accounts.
 - [x] Repo scaffolding (pnpm monorepo: `packages/db`, `packages/agent`, `apps/cli`, `evals`; `apps/web` and `apps/worker` come with Phase 1).
@@ -265,11 +265,11 @@ Deliverable: you and two testers can sponsor, sign up, get the morning message, 
 - [x] Postgres schema (`packages/db/sql/001_init.sql`), `Store` contract, dev `MemoryStore`, sample week seeded, `PgStore` tested on PGlite.
 - [x] Agent core: persona prompt, 14 tools, Tool Runner loop, per-person memory, message log, local CLI harness (`pnpm chat`).
 - [x] WhatsApp webhook (inbound text, buttons, media, voice-note acknowledgement) + outbound (text, media, interactive buttons, templates) through **Meta Cloud API direct**, with Twilio as the alternative adapter; onboarding of unknown numbers; per-passenger conversation history; webhook retry de-duplication. [ ] Live test on the Meta test number once the keys land.
-- Web app: program view, activity page, sponsor form, "my cruise", magic-link login.
-- TV mode route: today's program, "now / next" with countdown, QR codes to sign up, rotating
-  flyers, auto-refresh via Supabase realtime.
-- [x] Scheduler: morning run per person (template knock + parked full message), T-30 reminder sweep with guardian routing, T-60 sponsor nudges, ICS feed per person (`/cal/<token>.ics`). [ ] Deploy (Fly.io) + Supabase.
-- Flyer generator v1 (image model + overlaid text, 3 templates: Fiesta, Zen, Retro Cruise).
+- [x] Web app on the same server: program view, activity page, sponsor form, "my cruise", private links from the Capitán instead of magic-link email (owner's call, Oct 20).
+- [x] TV mode route: today's program, "now / next" with countdown, QR codes to sign up, rotating
+  flyers, auto-refresh by polling every 30 s (no Supabase realtime needed).
+- [x] Scheduler: morning run per person (template knock + parked full message), T-30 reminder sweep with guardian routing, T-60 sponsor nudges, ICS feed per person (`/cal/<token>.ics`). [x] Deploy (Fly.io, one-button workflow). [ ] Supabase (code ready; owner creates the project).
+- [x] Flyer generator v1 (Flux via fal.ai + overlaid text and sign-up QR; 5 vibes with designed fallbacks).
 - [x] Eval set: 40 realistic WhatsApp messages (Spanglish, typos, kids, "cancel yoga", "who's
   going to bingo") with expected tool calls (`pnpm eval`); run it on every persona/prompt change.
 - [x] Morning-program generator (deterministic brief + structured output: template knock line,
