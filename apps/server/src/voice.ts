@@ -216,7 +216,8 @@ export class VoiceService {
         tts: { voice_id: voiceId, model_id: TTS_MODEL },
       },
       platform_settings: {
-        overrides: { conversation_config_override: { agent: { first_message: true, language: true } } },
+        // Each call names its passenger in custom_llm_extra_body; ElevenLabs refuses it (1008) unless allowed here.
+        overrides: { custom_llm_extra_body: true, conversation_config_override: { agent: { first_message: true, language: true } } },
       },
     };
   }
