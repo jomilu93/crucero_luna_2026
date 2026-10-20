@@ -24,6 +24,8 @@ export interface Person {
   wakeTime: string;
   /** Opted out of proactive messages (morning, reminders, nudges, announcements); replies still flow. */
   muted?: boolean;
+  /** Said the admin password in the chat: manifest, removals, kids/guardians and the pause switch. */
+  admin?: boolean;
   icsToken: string;
   joinedAt: string;
 }
@@ -89,6 +91,9 @@ export interface Delivery {
   /** Optional data for a follow-up step, e.g. the full morning message waiting behind the template knock. */
   payload?: unknown;
 }
+
+/** Partial person update; guardianId: null clears the guardian. */
+export type PersonPatch = Partial<Omit<Person, "id" | "guardianId">> & { guardianId?: string | null };
 
 export type NewActivity = Omit<Activity, "id" | "createdAt" | "status"> & { status?: ActivityStatus };
 export type NewPerson = Omit<Person, "id" | "icsToken" | "joinedAt" | "humor" | "wakeTime"> &

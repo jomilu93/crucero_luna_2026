@@ -8,6 +8,7 @@ import type {
   NewActivity,
   NewPerson,
   Person,
+  PersonPatch,
   Signup,
   SignupStatus,
 } from "./types.js";
@@ -50,6 +51,7 @@ function rowToPerson(r: Row): Person {
     quietHours: r.quiet_start && r.quiet_end ? { start: hhmm(r.quiet_start), end: hhmm(r.quiet_end) } : undefined,
     wakeTime: hhmm(r.wake_time),
     muted: r.muted === true ? true : undefined,
+    admin: r.admin === true ? true : undefined,
     icsToken: String(r.ics_token),
     joinedAt: iso(r.joined_at),
   };
@@ -101,6 +103,7 @@ const PERSON_COLS: Record<string, string> = {
   humor: "humor",
   wakeTime: "wake_time",
   muted: "muted",
+  admin: "admin",
   icsToken: "ics_token",
 };
 const ACTIVITY_COLS: Record<string, string> = {
@@ -189,12 +192,19 @@ export class PgStore implements Store {
     );
     return rowToPerson(rows[0]);
   }
-  async updatePerson(id: string, patch: Partial<Omit<Person, "id">>): Promise<Person> {
+  async updatePerson(id: string, patch: PersonPatch): Promise<Person> {
     const { sql, params } = setClause(patch as Record<string, unknown>, PERSON_COLS, 2);
     if (!sql) return (await this.getPerson(id))!;
     const rows = await this.db.query<Row>(`update person set ${sql} where id::text = $1 returning *`, [id, ...params]);
     if (!rows[0]) throw new Error(`person not found: ${id}`);
     return rowToPerson(rows[0]);
+  }
+  async removePerson(id: string): Promise<void> {
+    const live = await this.db.query<Row>("select id, title from activity where sponsor_id::text = $1 and status <> 'cancelled' order by starts_at", [id]);
+    if (live.length) throw new Error(`still hosts ${live.map((a) => `"${a.title}" [${a.id}]`).join(", ")}; cancel those first`);
+    await this.db.query("update person set guardian_id = null where guardian_id::text = $1", [id]);
+    await this.db.query("delete from activity where sponsor_id::text = $1", [id]);
+    await this.db.query("delete from person where id::text = $1", [id]);
   }
 
   // Activities
@@ -351,6 +361,19 @@ export class PgStore implements Store {
   async getDelivery(kind: Delivery["kind"], key: string): Promise<Delivery | undefined> {
     const rows = await this.db.query<Row>("select * from delivery where kind = $1 and key = $2", [kind, key]);
     return rows[0] ? rowToDelivery(rows[0]) : undefined;
+  }
+  async getSetting<T = unknown>(key: string): Promise<T | undefined> {
+    const rows = await this.db.query<Row>("select value from ship_setting where key = $1", [key]);
+    if (!rows[0]) return undefined;
+    const v = rows[0].value;
+    return (typeof v === "string" ? JSON.parse(v) : v) as T;
+  }
+  async setSetting(key: string, value: unknown): Promise<void> {
+    await this.db.query(
+      `insert into ship_setting (key, value) values ($1, $2::jsonb)
+       on conflict (key) do update set value = excluded.value, updated_at = now()`,
+      [key, JSON.stringify(value)],
+    );
   }
   async markDelivered(kind: Delivery["kind"], key: string, payload?: unknown): Promise<Delivery> {
     const rows = await this.db.query<Row>(

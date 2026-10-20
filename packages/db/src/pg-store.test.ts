@@ -133,4 +133,30 @@ describe("PgStore on a real Postgres (PGlite)", () => {
     await store.markDelivered("reminder", "x");
     expect((await store.getDelivery("reminder", "x"))?.payload).toBeUndefined();
   });
+
+  it("stores the admin flag and ship settings, and removes a passenger cleanly", async () => {
+    expect(await store.getSetting("paused")).toBeUndefined();
+    await store.setSetting("paused", true);
+    expect(await store.getSetting("paused")).toBe(true);
+    await store.setSetting("paused", false);
+    expect(await store.getSetting("paused")).toBe(false);
+
+    const fake = await store.createPerson({ name: "Test Number", phoneE164: "+16315551181", language: "es", role: "adult" });
+    expect((await store.updatePerson(fake.id, { admin: true })).admin).toBe(true);
+    const kid = await store.createPerson({ name: "Kid Test", language: "es", role: "kid", guardianId: fake.id });
+    const hosted = await store.createActivity({ title: "Prueba", emoji: "🧪", sponsorId: fake.id, startsAt: mx("2026-12-30", "10:00"), endsAt: mx("2026-12-30", "11:00"), location: "Lido", createdVia: "web" });
+    await store.setSignup(hosted.id, sofia.id, "going");
+    await store.remember(fake.id, "k", "v");
+    await store.saveConversation(fake.id, [{ role: "user", content: "hi" }]);
+    await store.logMessage({ personId: fake.id, channel: "telegram", direction: "in", body: "hi" });
+    await expect(store.removePerson(fake.id)).rejects.toThrow(/still hosts "Prueba"/);
+    await store.updateActivity(hosted.id, { status: "cancelled" });
+    await store.removePerson(fake.id);
+    expect(await store.getPerson(fake.id)).toBeUndefined();
+    expect(await store.getActivity(hosted.id)).toBeUndefined();
+    expect((await store.getPerson(kid.id))!.guardianId).toBeUndefined();
+    expect(await store.getConversation(fake.id)).toBeUndefined();
+    expect((await store.updatePerson(kid.id, { guardianId: sofia.id })).guardianId).toBe(sofia.id);
+    expect((await store.updatePerson(kid.id, { guardianId: null })).guardianId).toBeUndefined();
+  });
 });

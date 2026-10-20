@@ -3,6 +3,7 @@ import {
   type Person,
   type Store,
   dayBounds,
+  isPaused,
   prettyDate,
   prettyTime,
   shipDate,
@@ -50,7 +51,7 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
 
   const lines: string[] = [
     `# Current passenger`,
-    `Name: ${person.name}${person.nickname ? ` (${person.nickname})` : ""} · id: ${person.id} · language: ${person.language} · role: ${person.role}${guardian ? ` (guardian: ${guardian.name}, id ${guardian.id})` : ""} · humor: ${person.humor}${person.quietHours ? ` · quiet hours: ${person.quietHours.start}–${person.quietHours.end}` : ""}${person.muted ? " · MUTED (no proactive messages)" : ""}`,
+    `Name: ${person.name}${person.nickname ? ` (${person.nickname})` : ""} · id: ${person.id} · language: ${person.language} · role: ${person.role}${guardian ? ` (guardian: ${guardian.name}, id ${guardian.id})` : ""} · humor: ${person.humor}${person.quietHours ? ` · quiet hours: ${person.quietHours.start}–${person.quietHours.end}` : ""}${person.muted ? " · MUTED (no proactive messages)" : ""}${person.admin ? ` · ADMIN (admin tools available)${(await isPaused(store)) ? " · SHIP IS PAUSED" : ""}` : ""}`,
     `Ship time now: ${prettyDate(today, person.language)} ${shipTime(now)} (${today})`,
     headlineFor(today) ? `Today's headline: ${headlineFor(today)}` : "",
     isNew

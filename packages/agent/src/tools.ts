@@ -7,6 +7,7 @@ import {
   addDays,
   dayBounds,
   inQuietHours,
+  isPaused,
   mx,
   shipDate,
   shipTime,
@@ -415,6 +416,93 @@ export function buildTools(ctx: ToolContext) {
     }),
   });
 
+  // ----- admin (only for passengers who said the admin password) -----
+
+  const byIdOrName = async (who: string): Promise<Person> => {
+    const p = (await store.getPerson(who)) ?? (await store.findPersonByName(who));
+    if (!p) throw new Error(`No passenger "${who}" on the manifest. Use admin_manifest for exact ids.`);
+    return p;
+  };
+
+  const admin_manifest = betaZodTool({
+    name: "admin_manifest",
+    description: "ADMIN. Every passenger with id, channel, role, guardian, admin/muted flags, join date and how many activities they joined or host, plus whether the ship is paused.",
+    inputSchema: z.object({}),
+    run: wrap("admin_manifest", async () => {
+      const people = await store.listPeople();
+      const names = new Map(people.map((p) => [p.id, p.name]));
+      const acts = await store.listActivities();
+      const rows = await Promise.all(
+        people.map(async (p) => {
+          const going = (await store.listSignupsForPerson(p.id)).filter((s) => s.status !== "out").length;
+          const hosts = acts.filter((a) => a.sponsorId === p.id).length;
+          const channel = p.phoneE164?.startsWith("tg:") ? "telegram" : p.phoneE164 ? `whatsapp ${p.phoneE164}` : "no chat";
+          const flags = [p.role, p.guardianId ? `guardian ${names.get(p.guardianId) ?? p.guardianId}` : "", p.admin ? "ADMIN" : "", p.muted ? "muted" : ""].filter(Boolean).join(", ");
+          return `${p.name} (id ${p.id}) · ${channel} · ${flags} · joined ${p.joinedAt.slice(0, 10)} · signed up ${going} · hosts ${hosts}`;
+        }),
+      );
+      return `${(await isPaused(store)) ? "SHIP PAUSED" : "Ship running"} · ${people.length} passengers\n${rows.join("\n")}`;
+    }),
+  });
+
+  const admin_remove_passenger = betaZodTool({
+    name: "admin_remove_passenger",
+    description: "ADMIN. Take a passenger off the manifest with their sign-ups, memory and chat history (e.g. a test or fake passenger). Irreversible: call it only after the admin confirmed this exact person in this conversation. Fails while they host live activities.",
+    inputSchema: z.object({ person: z.string().describe("Passenger id (preferred) or exact name") }),
+    run: wrap("admin_remove_passenger", async ({ person }) => {
+      const p = await byIdOrName(person);
+      if (p.id === passenger.id) return "NOT ALLOWED: an admin cannot remove themselves.";
+      await store.removePerson(p.id);
+      return `Removed ${p.name} (id ${p.id}) from the manifest. If they write again they board as a new passenger.`;
+    }),
+  });
+
+  const admin_set_role = betaZodTool({
+    name: "admin_set_role",
+    description: "ADMIN. Mark a passenger as a kid with the adult who receives their reminders (guardian), or back to adult. Kids get no late-night suggestions and their guardian can manage their activities.",
+    inputSchema: z.object({
+      person: z.string().describe("Passenger id or exact name"),
+      role: z.enum(["adult", "kid"]),
+      guardian: z.string().optional().describe("Required for kid: the guardian's id or exact name"),
+    }),
+    run: wrap("admin_set_role", async ({ person, role, guardian }) => {
+      const p = await byIdOrName(person);
+      if (role === "adult") {
+        await store.updatePerson(p.id, { role: "adult", guardianId: null });
+        return `${p.name} is now an adult passenger (no guardian).`;
+      }
+      if (!guardian) return "ERROR: a kid needs a guardian; ask who receives their reminders.";
+      const g = await byIdOrName(guardian);
+      if (g.id === p.id) return "ERROR: a kid cannot be their own guardian.";
+      if (g.role === "kid") return `ERROR: ${g.name} is a kid; the guardian must be an adult.`;
+      await store.updatePerson(p.id, { role: "kid", guardianId: g.id });
+      return `${p.name} is now a kid; guardian: ${g.name}.`;
+    }),
+  });
+
+  const admin_set_admin = betaZodTool({
+    name: "admin_set_admin",
+    description: "ADMIN. Give or take away admin access for a passenger (the password also grants it).",
+    inputSchema: z.object({ person: z.string(), admin: z.boolean() }),
+    run: wrap("admin_set_admin", async ({ person, admin }) => {
+      const p = await byIdOrName(person);
+      await store.updatePerson(p.id, { admin });
+      return admin ? `${p.name} is now an admin.` : `${p.name} is no longer an admin.`;
+    }),
+  });
+
+  const admin_pause = betaZodTool({
+    name: "admin_pause",
+    description: "ADMIN. The pause switch. Paused: no morning programs, reminders or nudges go out, and non-admin passengers get a short 'off duty' reply instead of the Capitán. Unpause to resume.",
+    inputSchema: z.object({ paused: z.boolean() }),
+    run: wrap("admin_pause", async ({ paused }) => {
+      await store.setSetting("paused", paused);
+      return paused ? "Ship PAUSED: nothing proactive goes out and passengers get an off-duty reply." : "Ship running again: schedule and replies resume.";
+    }),
+  });
+
+  const admin = passenger.admin ? [admin_manifest, admin_remove_passenger, admin_set_role, admin_set_admin, admin_pause] : [];
+
   return [
     get_program,
     get_my_day,
@@ -431,5 +519,6 @@ export function buildTools(ctx: ToolContext) {
     set_preferences,
     my_cabin_link,
     get_weather,
+    ...admin,
   ];
 }
