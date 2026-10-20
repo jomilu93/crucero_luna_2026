@@ -88,15 +88,20 @@ ${tips.map(almond).join("")}${thumbNail}</g>`;
 <path d="M-4.6 9.5 C-4.9 11 -4.6 12.5 -4 14" fill="none" stroke="#ff7c99" stroke-width="1.6" stroke-linecap="round"/>
 <path d="M15 18.8 C19 20.4 23 21.6 26 22.6" fill="none" stroke="#ff7c99" stroke-width="1.4" stroke-linecap="round"/>
 <path d="M-6 6.6 C-1.5 9 3 9.2 7.2 7.6" fill="none" stroke="#6d0018" stroke-width="1.4" stroke-linecap="round"/></g>`;
-  // The office essentials: a clipboard with the passenger checklist (wave pose only).
+  // The office essentials: a clipboard with the passenger checklist (wave pose only). The hand holds it from
+  // behind; only the thumb, with its red nail, wraps over the board's front edge.
   const clipboard = cheer
     ? ""
-    : `<g transform="translate(${rightHand[0] - 2} ${rightHand[1] + 4}) rotate(10)">
+    : `<g transform="translate(${rightHand[0] + 8} ${rightHand[1] + 4}) rotate(10)">
   <rect x="-14" y="-6" width="28" height="36" rx="4" fill="#9c6b3f" stroke="#6d4524" stroke-width="2"/>
   <rect x="-10.5" y="-1" width="21" height="27" rx="2" fill="#fffdf6"/>
   <rect x="-6" y="-9" width="12" height="7" rx="2.5" fill="#c9ced6" stroke="#8a929c" stroke-width="1.5"/>
   <path d="M-7 6 l2.5 2.5 l4 -5 M-7 14 l2.5 2.5 l4 -5" fill="none" stroke="#2e7d32" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M2 6 h6 M2 14 h6 M-7 21 h15" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round"/></g>`;
+  <path d="M2 6 h6 M2 14 h6 M-7 21 h15" stroke="#9aa3ad" stroke-width="1.6" stroke-linecap="round"/>
+  <g transform="translate(-16 2) rotate(78)">
+    <rect x="-2.6" y="-10" width="5.2" height="12" rx="2.6" fill="${skin}" stroke="${skinLine}" stroke-width="1.2"/>
+    <path d="M-2.1 -8.6 C-2.1 -11.8 -1 -13.6 0 -14.4 C1 -13.6 2.1 -11.8 2.1 -8.6 Q0 -9.8 -2.1 -8.6 Z" fill="${nail}" stroke="#9c0026" stroke-width=".7"/>
+  </g></g>`;
   // Pearls across the frame, between the face plate and the celosía.
   const pearls = Array.from({ length: 17 }, (_, i) => {
     const x = 46 + i * 8;
@@ -145,8 +150,8 @@ ${arm(leftArm)}${arm(rightArm)}
 <circle cx="139" cy="94" r="1.4" fill="${ink}"/>
 ${blocks()}
 ${pearls}
-${clipboard}
-${hand(leftHand, cheer ? -12 : -18, 1)}${hand(rightHand, cheer ? 12 : 150, -1)}
+${hand(rightHand, cheer ? 12 : 95, -1)}${clipboard}
+${hand(leftHand, cheer ? -12 : -18, 1)}
 </svg>`;
 }
 
