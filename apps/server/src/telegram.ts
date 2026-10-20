@@ -115,6 +115,12 @@ export class TelegramOutbox implements TemplateOutbox {
     await this.call("answerCallbackQuery", { callback_query_id: callbackQueryId });
   }
 
+  /** The bot's @username, for t.me deep links on flyers and the TV. */
+  async username(): Promise<string | undefined> {
+    const me = (await this.call("getMe", {})) as { username?: string };
+    return me.username;
+  }
+
   async setWebhook(url: string, secret: string): Promise<void> {
     await this.call("setWebhook", { url, secret_token: secret, allowed_updates: ["message", "callback_query"], drop_pending_updates: false });
   }
@@ -168,7 +174,9 @@ export function parseTelegramUpdate(body: unknown): ParsedTelegramUpdate | undef
   const base = { phoneE164: tgAddress(m.chat.id), profileName: nameOf(m.from), channel: "telegram" as const };
   let text: string;
   if (m.text !== undefined) {
-    // /start (with or without a deep-link payload) is how every Telegram chat begins.
+    // /start is how every Telegram chat begins. A flyer/TV QR code adds a payload: /start signup_a04.
+    const deepLink = m.text.match(/^\/start\s+signup_([A-Za-z0-9-]+)$/);
+    if (deepLink) return { updateId: u.update_id, message: { ...base, text: "Hola Capitán", buttonPayload: `signup:${deepLink[1]}` } };
     text = /^\/start\b/.test(m.text) ? "Hola Capitán" : m.text.trim();
   } else if (m.voice || m.audio) {
     text = "[El pasajero envió una nota de voz; la transcripción aún no está activa. Pídele que lo escriba.]";

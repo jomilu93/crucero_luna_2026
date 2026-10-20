@@ -19,6 +19,10 @@ export interface Outbox {
   send(to: Person | "everyone", text: string, opts?: { mediaUrl?: string; from: Person }): Promise<void>;
 }
 
+export interface FlyerMaker {
+  make(activityId: string, vibe: "fiesta" | "zen" | "retro-cruise" | "kids" | "gala", lang: "es" | "en", taglineHint?: string): Promise<{ url: string }>;
+}
+
 export interface ToolCallRecord {
   name: string;
   input: unknown;
@@ -32,6 +36,10 @@ export interface ToolContext {
   outbox: Outbox;
   /** Where the conversation happens; recorded on activities the passenger creates. */
   channel?: Channel;
+  /** Renders flyers (Claude brief + image model + overlaid text). Absent → the tool only queues. */
+  flyers?: FlyerMaker;
+  /** Builds a passenger's private web link (the web app). Absent → no web app on this deployment. */
+  cabinLink?: (person: Person) => string;
   /** Observability + evals: every executed tool call is reported here. */
   onToolCall?: (rec: ToolCallRecord) => void;
 }
@@ -302,17 +310,23 @@ export function buildTools(ctx: ToolContext) {
 
   const generate_flyer = betaZodTool({
     name: "generate_flyer",
-    description: "Request an AI-generated flyer for an activity in a given vibe. Returns the creative brief that will be rendered; the image pipeline attaches the flyer to the activity when ready.",
+    description: "Make a flyer for an activity in a given vibe and send it to the current passenger as an image (it takes ~15 seconds). It is also attached to the activity for the web app and the TV. Mention it in your reply; to share it with others, use send_message afterwards.",
     inputSchema: z.object({
       activity_id: z.string(),
       vibe: z.enum(["fiesta", "zen", "retro-cruise", "kids", "gala"]),
-      tagline: z.string().max(80).describe("A short funny tagline in the passenger's language"),
+      tagline: z.string().max(80).optional().describe("Optional short funny tagline in the passenger's language; the designer writes one otherwise"),
     }),
     run: wrap("generate_flyer", async ({ activity_id, vibe, tagline }) => {
       const a = await store.getActivity(activity_id);
       if (!a) throw new Error(`No activity ${activity_id}`);
-      await store.updateActivity(a.id, { flyerUrl: `pending:${vibe}:${tagline}` });
-      return `Flyer queued (vibe: ${vibe}, tagline: "${tagline}") for "${a.title}". It is not rendered yet; tell the passenger it is in the print shop, do not claim it is attached.`;
+      if (a.status === "cancelled") throw new Error(`"${a.title}" is cancelled.`);
+      if (!ctx.flyers) {
+        await store.updateActivity(a.id, { flyerUrl: `pending:${vibe}:${tagline ?? ""}` });
+        return `Flyer queued (vibe: ${vibe}) for "${a.title}". The print shop is not running here; tell the passenger it is pending, do not claim it is attached.`;
+      }
+      const { url } = await ctx.flyers.make(a.id, vibe, lang, tagline);
+      await ctx.outbox.send(passenger, `${a.emoji} ${a.title}`, { mediaUrl: url, from: passenger });
+      return `Flyer for "${a.title}" sent to ${passenger.name} as an image and attached to the activity (${url}). Do not paste the URL; say it is in their chat.`;
     }),
   });
 
@@ -382,6 +396,16 @@ export function buildTools(ctx: ToolContext) {
     }),
   });
 
+  const my_cabin_link = betaZodTool({
+    name: "my_cabin_link",
+    description: "The current passenger's private web page link (their 'camarote'): the full program by day, one-tap sign-ups, a sponsor form with flyers, their settings and a calendar link. Share it when they ask for the web, the app, the program as a page, or a link; it is personal, so never send one passenger's link to another.",
+    inputSchema: z.object({}),
+    run: wrap("my_cabin_link", async () => {
+      if (!ctx.cabinLink) return "The web app is not running on this deployment; describe things in chat instead.";
+      return `Private link for ${passenger.name}: ${ctx.cabinLink(passenger)} (paste it as is).`;
+    }),
+  });
+
   const get_weather = betaZodTool({
     name: "get_weather",
     description: "Weather outlook for Acapulco on a date. Until a live provider is wired, returns late-December climatology, clearly labeled.",
@@ -405,6 +429,7 @@ export function buildTools(ctx: ToolContext) {
     send_message,
     remember,
     set_preferences,
+    my_cabin_link,
     get_weather,
   ];
 }

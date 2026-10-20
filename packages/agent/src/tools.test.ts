@@ -6,18 +6,19 @@ import { buildTools, suggestActivities, type ToolCallRecord, type ToolContext } 
 
 const NOW = new Date("2026-12-27T15:00:00Z"); // Dec 27, 9:00 am ship time
 
-async function ctxFor(id: string, now = NOW) {
+async function ctxFor(id: string, now = NOW, extra: Partial<ToolContext> = {}) {
   const store = new MemoryStore({ now: () => now });
   seedSample(store);
   const passenger = (await store.getPerson(id)) as Person;
-  const sent: { to: string; text: string }[] = [];
+  const sent: { to: string; text: string; mediaUrl?: string }[] = [];
   const calls: ToolCallRecord[] = [];
   const ctx: ToolContext = {
     store,
     passenger,
     now,
-    outbox: { send: async (to, text) => void sent.push({ to: to === "everyone" ? "everyone" : to.name, text }) },
+    outbox: { send: async (to, text, opts) => void sent.push({ to: to === "everyone" ? "everyone" : to.name, text, ...(opts?.mediaUrl ? { mediaUrl: opts.mediaUrl } : {}) }) },
     onToolCall: (r) => calls.push(r),
+    ...extra,
   };
   // Keyed by name for the tests; the union of input types collapses, so loosen `run` here only.
   const tools = Object.fromEntries(buildTools(ctx).map((t) => [t.name, t])) as Record<string, { run: (input: any) => Promise<string> | string }>;
@@ -161,11 +162,26 @@ describe("tools", () => {
     expect(other.sent).toEqual([]);
     expect(sent).toEqual([]);
   });
-  it("queues a flyer without claiming it exists", async () => {
+  it("queues a flyer without claiming it exists when no print shop runs", async () => {
     const { tools, store } = await ctxFor("valeria");
     const out = await tools.generate_flyer.run({ activity_id: "a09", vibe: "retro-cruise", tagline: "Cero vergüenza" });
-    expect(out).toMatch(/not rendered yet/);
+    expect(out).toMatch(/pending, do not claim it is attached/);
     expect((await store.getActivity("a09"))!.flyerUrl).toMatch(/^pending:retro-cruise/);
+  });
+  it("makes a flyer and sends it to the passenger as an image", async () => {
+    const made: unknown[] = [];
+    const flyers = { make: async (id: string, vibe: string, lang: string, tagline?: string) => (made.push({ id, vibe, lang, tagline }), { url: `https://cdn.test/${id}.png` }) };
+    const { tools, sent } = await ctxFor("valeria", NOW, { flyers });
+    const out = await tools.generate_flyer.run({ activity_id: "a09", vibe: "fiesta" });
+    expect(made).toEqual([{ id: "a09", vibe: "fiesta", lang: "es", tagline: undefined }]);
+    expect(sent).toEqual([{ to: "Valeria Luna", text: "🎤 Karaoke de camarote", mediaUrl: "https://cdn.test/a09.png" }]);
+    expect(out).toMatch(/sent to Valeria Luna as an image/);
+  });
+  it("hands out the passenger's own web link only", async () => {
+    const { tools } = await ctxFor("valeria", NOW, { cabinLink: (p) => `https://ship.test/c/${p.id}.sig` });
+    expect(await tools.my_cabin_link.run({})).toMatch(/https:\/\/ship\.test\/c\/valeria\.sig/);
+    const none = await ctxFor("valeria");
+    expect(await none.tools.my_cabin_link.run({})).toMatch(/not running/);
   });
 });
 
