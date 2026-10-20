@@ -62,7 +62,7 @@ Live eval on this build (persona: check the host before cancelling, reply in the
 the one left a two-gag tone call.
 
 **Creative pass (2026-10-20, owner's choices):** the ship is the **Moon of the Seas** (anteriormente *Fondo de Cristal
-Victoria*), the captain is **Capitán Lunáticus** (Greek), and the mascot **Primer Oficial Manpaty** is the old yellow
+Victoria*), the captain is **Capitán Lunáticus** (Greek), and the mascot **la Primera Oficial Manpaty** (she/her; cheeky secretary) is the old yellow
 ceramic celosía entrance screen with a brass frame, drawn as SVG in `apps/server/src/manpaty.ts`. Names live in
 `packages/agent/src/brand.ts`. New passengers get a Manpaty welcome photo (`welcomePhotoUrl`).
 

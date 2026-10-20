@@ -125,7 +125,7 @@ describe("web app and TV routes", () => {
     await store.updatePerson("sofia", { admin: false });
   });
 
-  it("serves Manpaty as SVG and PNG, and shows him on the home page", async () => {
+  it("serves Manpaty as SVG and PNG, and shows her on the home page", async () => {
     const svg = await fetch(`${base}/manpaty.svg?pose=cheer`);
     expect(svg.headers.get("content-type")).toBe("image/svg+xml");
     expect(await svg.text()).toContain("<svg");

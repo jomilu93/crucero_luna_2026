@@ -52,7 +52,7 @@ const ADMIN_WELCOME = {
   en: "🔑 Admin access granted. Ask me for: the full manifest, removing a passenger, marking kids and their guardians, or pausing the ship. Your page (write *my link*) now has the admin panel. For safety, delete the message with the password.",
 } as const;
 
-const WELCOME_PHOTO_CAPTION = `🟨 ${MASCOT_NAME}, Primer Oficial del ${SHIP_NAME}, te da la bienvenida a bordo. *clink clink*`;
+const WELCOME_PHOTO_CAPTION = `🟨 ${MASCOT_NAME}, Primera Oficial del ${SHIP_NAME}, te da la bienvenida a bordo. *clink clink*`;
 
 const OFF_DUTY = {
   es: "🌙 El Capitán está fuera de servicio un momento: el barco está en pausa. ¡Vuelvo pronto!",

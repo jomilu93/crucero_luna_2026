@@ -1,8 +1,8 @@
 /**
- * Primer Oficial Manpaty, the ship's mascot: a cartoon of the yellow ceramic-block screen that stood at the
+ * Primera Oficial Manpaty, the ship's mascot: a cartoon of the yellow ceramic-block screen that stood at the
  * apartment's entrance (brass frame, chunky yellow ceramic celosía blocks with sunburst openings) until the remodel,
  * now the ship's cheeky secretary: a wink, red cat-eye glasses, pearls, a pencil tucked behind the frame, the
- * passenger checklist on a clipboard, and the Christmas wreath it used to wear as a brooch. Pure SVG, so it stays crisp on phones, flyers and the TV.
+ * passenger checklist on a clipboard, long red painted nails and red stiletto heels. Pure SVG, so it stays crisp on phones, flyers and the TV.
  */
 import { Resvg } from "@resvg/resvg-js";
 
@@ -47,15 +47,32 @@ export function manpatySvg(opts: { size?: number; pose?: ManpatyPose } = {}): st
   const cheer = opts.pose === "cheer";
   const ink = "#2b2118";
   const brassLine = "#7a5520";
-  // Arms: brass rods from the frame's sides ending in cartoon gloves.
+  // Arms: brass rods from the frame's sides ending in hands with long red painted nails.
   const leftArm = cheer ? "M34 132 C20 114 16 92 22 70" : "M34 132 C18 122 12 102 18 82";
   const rightArm = cheer ? "M186 132 C200 114 204 92 198 70" : "M186 140 C196 150 200 162 198 174";
   const leftHand = cheer ? [22, 66] : [18, 78];
   const rightHand = cheer ? [198, 66] : [198, 178];
   const arm = (d: string) =>
     `<path d="${d}" fill="none" stroke="${brassLine}" stroke-width="9" stroke-linecap="round"/><path d="${d}" fill="none" stroke="url(#brassRod)" stroke-width="5.5" stroke-linecap="round"/>`;
-  const glove = ([x, y]: number[]) =>
-    `<circle cx="${x}" cy="${y}" r="9.5" fill="#fff" stroke="#c9c2b6" stroke-width="2"/><path d="M${x - 4} ${y - 5} q4 -3 8 0" fill="none" stroke="#d8d2c6" stroke-width="1.6" stroke-linecap="round"/>`;
+  const skin = "#ffe8cc";
+  const skinLine = "#d9b48f";
+  const nail = "#d50032";
+  /** An open hand: palm, four fingers toward `deg` (0 = up), a thumb, and a long almond nail on each. */
+  const hand = ([x, y]: number[], deg: number, thumbSide: 1 | -1) => {
+    const finger = (a: number, len: number) =>
+      `<g transform="rotate(${a})"><rect x="-2.9" y="${-len - 6}" width="5.8" height="${len + 3}" rx="2.9" fill="${skin}" stroke="${skinLine}" stroke-width="1.2"/>
+<path d="M0 ${-len - 13} C2.9 ${-len - 10.5} 2.9 ${-len - 6.5} 0 ${-len - 5.5} C-2.9 ${-len - 6.5} -2.9 ${-len - 10.5} 0 ${-len - 13} Z" fill="${nail}" stroke="#a00026" stroke-width=".8"/>
+<path d="M-1 ${-len - 10.5} q.6 -1.2 1.4 -1.2" stroke="#ff8fa6" stroke-width="1" stroke-linecap="round" fill="none"/></g>`;
+    const fingers = finger(-24, 11) + finger(-8, 13.5) + finger(8, 13.5) + finger(24, 11);
+    const thumb = finger(thumbSide * 70, 8);
+    return `<g transform="translate(${x} ${y}) rotate(${deg}) scale(.92)">${fingers}${thumb}<ellipse rx="8.2" ry="8.8" fill="${skin}" stroke="${skinLine}" stroke-width="1.4"/></g>`;
+  };
+  /** A red stiletto pump; `dir` points the toe left (-1) or right (1). */
+  const heel = (cx: number, dir: 1 | -1) => {
+    const x = (dx: number) => (cx + dir * dx).toFixed(1);
+    return `<path d="M${x(-9)} 276 Q${x(-9)} 272 ${x(-4)} 272 L${x(6)} 272 Q${x(15)} 274 ${x(17)} 281 Q${x(17)} 285 ${x(12)} 285 L${x(-1)} 285 Q${x(-4)} 281 ${x(-6)} 285 L${x(-7)} 293 L${x(-9.5)} 293 Q${x(-10)} 284 ${x(-9)} 276 Z" fill="#d50032" stroke="#8e0020" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M${x(-5)} 275 Q${x(4)} 273.5 ${x(11)} 276" fill="none" stroke="#ff6f8f" stroke-width="1.6" stroke-linecap="round"/>`;
+  };
   // The office essentials: a clipboard with the passenger checklist (wave pose only).
   const clipboard = cheer
     ? ""
@@ -80,10 +97,10 @@ export function manpatySvg(opts: { size?: number; pose?: ManpatyPose } = {}): st
   <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6d6"/><stop offset="1" stop-color="#ffe49a"/></linearGradient>
   <radialGradient id="pearl" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e8e0d4"/></radialGradient>
 </defs>
-<ellipse cx="110" cy="290" rx="64" ry="8" fill="#000" fill-opacity=".16"/>
-<rect x="76" y="248" width="16" height="32" rx="7" fill="url(#brassRod)" stroke="${brassLine}" stroke-width="2"/>
-<rect x="128" y="248" width="16" height="32" rx="7" fill="url(#brassRod)" stroke="${brassLine}" stroke-width="2"/>
-<ellipse cx="83" cy="283" rx="15" ry="7.5" fill="#1b2a4a"/><ellipse cx="137" cy="283" rx="15" ry="7.5" fill="#1b2a4a"/>
+<ellipse cx="110" cy="293" rx="62" ry="6.5" fill="#000" fill-opacity=".16"/>
+<rect x="78" y="248" width="12" height="28" rx="6" fill="url(#brassRod)" stroke="${brassLine}" stroke-width="2"/>
+<rect x="130" y="248" width="12" height="28" rx="6" fill="url(#brassRod)" stroke="${brassLine}" stroke-width="2"/>
+${heel(84, -1)}${heel(136, 1)}
 ${arm(leftArm)}${arm(rightArm)}
 <g transform="translate(170 54) rotate(-34)">
   <rect x="-4.5" y="-44" width="9" height="48" fill="#ffcc33" stroke="#b8860b" stroke-width="1.6"/>
@@ -113,9 +130,8 @@ ${arm(leftArm)}${arm(rightArm)}
 <circle cx="139" cy="94" r="1.4" fill="${ink}"/>
 ${blocks()}
 ${pearls}
-<g transform="translate(40 108)"><circle r="6.5" fill="none" stroke="#2e7d32" stroke-width="4"/><circle cx="-2.5" cy="-4" r="1.5" fill="#e53935"/><circle cx="4" cy="-2" r="1.5" fill="#e53935"/><path d="M-2.5 5 L0 7 L2.5 5 L1.5 10 L0 8.5 L-1.5 10 Z" fill="#d32f2f"/></g>
 ${clipboard}
-${glove(leftHand)}${glove(rightHand)}
+${hand(leftHand, cheer ? -12 : -18, 1)}${hand(rightHand, cheer ? 12 : 150, -1)}
 </svg>`;
 }
 

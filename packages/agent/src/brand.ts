@@ -5,5 +5,5 @@ export const SHIP_FORMER_NAME = "Fondo de Cristal Victoria";
 /** The family trip itself (dates, calendars, privacy policy). */
 export const VOYAGE_NAME = "Crucero Luna 2026";
 export const CAPTAIN_NAME = "Capitán Lunáticus";
-/** The first mate: the yellow ceramic-block screen that greeted everyone at the apartment's entrance until the remodel. */
+/** The first mate (she/her): the yellow ceramic-block screen that greeted everyone at the apartment's entrance until the remodel. */
 export const MASCOT_NAME = "Manpaty";

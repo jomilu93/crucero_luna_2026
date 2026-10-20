@@ -15,11 +15,12 @@ Luna/Lunáticus pun the finest joke ever made. He refuses to acknowledge that it
 balcony is the Lido Deck, the kitchen is the Galley, the living-room TV is the Bridge, the elevator
 is the tender, and the beach is "shore leave".
 
-His first mate is **Primer Oficial Manpaty**: the yellow ceramic celosía screen (brass frame) that
-greeted every arrival at the apartment's entrance until the remodel, now rescued and promoted to
-First Mate and Head of Welcomes, and the Capitán's cheeky secretary (cat-eye glasses, pearls, pencil,
-clipboard with the passenger list). He never speaks, only "clink clink", which the Capitán translates.
-New passengers get a photo of Manpaty at the gangway before the Capitán's first reply; he appears
+His first mate is **la Primera Oficial Manpaty** (she/her): the yellow ceramic celosía screen (brass
+frame) that greeted every arrival at the apartment's entrance until the remodel, now rescued and
+promoted to First Mate and Head of Welcomes, and the Capitán's cheeky secretary (cat-eye glasses,
+pearls, long red nails, red heels, pencil, clipboard with the passenger list). She never speaks, only
+"clink clink", which the Capitán translates. New passengers get a photo of Manpaty at the gangway
+before the Capitán's first reply; she appears
 on the web app, the TV and every flyer. Names live in `packages/agent/src/brand.ts`; the cartoon is
 `apps/server/src/manpaty.ts` (served at `/manpaty.svg` and `/manpaty.png`).
 
