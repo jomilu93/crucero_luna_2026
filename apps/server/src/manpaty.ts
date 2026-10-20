@@ -57,22 +57,37 @@ export function manpatySvg(opts: { size?: number; pose?: ManpatyPose } = {}): st
   const skin = "#ffe8cc";
   const skinLine = "#d9b48f";
   const nail = "#d50032";
-  /** An open hand: palm, four fingers toward `deg` (0 = up), a thumb, and a long almond nail on each. */
+  /**
+   * A cartoon hand drawn as one outline (four rounded fingers with little separations, a thumb), fingers toward
+   * `deg` (0 = up), with a long glossy almond nail on each fingertip. `thumbSide` puts the thumb right (1) or left (-1).
+   */
   const hand = ([x, y]: number[], deg: number, thumbSide: 1 | -1) => {
-    const finger = (a: number, len: number) =>
-      `<g transform="rotate(${a})"><rect x="-2.9" y="${-len - 6}" width="5.8" height="${len + 3}" rx="2.9" fill="${skin}" stroke="${skinLine}" stroke-width="1.2"/>
-<path d="M0 ${-len - 13} C2.9 ${-len - 10.5} 2.9 ${-len - 6.5} 0 ${-len - 5.5} C-2.9 ${-len - 6.5} -2.9 ${-len - 10.5} 0 ${-len - 13} Z" fill="${nail}" stroke="#a00026" stroke-width=".8"/>
-<path d="M-1 ${-len - 10.5} q.6 -1.2 1.4 -1.2" stroke="#ff8fa6" stroke-width="1" stroke-linecap="round" fill="none"/></g>`;
-    const fingers = finger(-24, 11) + finger(-8, 13.5) + finger(8, 13.5) + finger(24, 11);
-    const thumb = finger(thumbSide * 70, 8);
-    return `<g transform="translate(${x} ${y}) rotate(${deg}) scale(.92)">${fingers}${thumb}<ellipse rx="8.2" ry="8.8" fill="${skin}" stroke="${skinLine}" stroke-width="1.4"/></g>`;
+    const tips: [number, number][] = [
+      [-6.25, -12],
+      [-1.75, -15],
+      [2.75, -15],
+      [7.25, -12],
+    ];
+    const outline =
+      "M-8 7 L-8.5 -6 L-8.5 -12 A2.25 2.25 0 0 1 -4 -12 L-4 -7 L-4 -15 A2.25 2.25 0 0 1 0.5 -15 L0.5 -8 " +
+      "L0.5 -15 A2.25 2.25 0 0 1 5 -15 L5 -7 L5 -12 A2.25 2.25 0 0 1 9.5 -12 L9.5 -2 L12.2 -5.6 " +
+      "A2.2 2.2 0 0 1 15.4 -2.6 L10.6 5 Q8.6 9 2 9 L-4 9 Q-8 9 -8 7 Z";
+    const almond = ([cx, ty]: [number, number]) =>
+      `<path d="M${cx - 2.1} ${ty + 1.6} C${cx - 2.1} ${ty - 2} ${cx - 1} ${ty - 4} ${cx} ${ty - 4.8} C${cx + 1} ${ty - 4} ${cx + 2.1} ${ty - 2} ${cx + 2.1} ${ty + 1.6} Q${cx} ${ty + .4} ${cx - 2.1} ${ty + 1.6} Z" fill="${nail}" stroke="#9c0026" stroke-width=".7"/>` +
+      `<path d="M${cx - .9} ${ty - 1.6} q.4 -1.2 1 -1.6" fill="none" stroke="#ff9ab0" stroke-width=".9" stroke-linecap="round"/>`;
+    const thumbNail = `<g transform="translate(13.8 -4.1) rotate(53)">${almond([0, 0])}</g>`;
+    return `<g transform="translate(${x} ${y}) rotate(${deg}) scale(${thumbSide * 1.15} 1.15)">
+<path d="${outline}" fill="${skin}" stroke="${skinLine}" stroke-width="1.3" stroke-linejoin="round"/>
+${tips.map(almond).join("")}${thumbNail}</g>`;
   };
-  /** A red stiletto pump; `dir` points the toe left (-1) or right (1). */
-  const heel = (cx: number, dir: 1 | -1) => {
-    const x = (dx: number) => (cx + dir * dx).toFixed(1);
-    return `<path d="M${x(-9)} 276 Q${x(-9)} 272 ${x(-4)} 272 L${x(6)} 272 Q${x(15)} 274 ${x(17)} 281 Q${x(17)} 285 ${x(12)} 285 L${x(-1)} 285 Q${x(-4)} 281 ${x(-6)} 285 L${x(-7)} 293 L${x(-9.5)} 293 Q${x(-10)} 284 ${x(-9)} 276 Z" fill="#d50032" stroke="#8e0020" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M${x(-5)} 275 Q${x(4)} 273.5 ${x(11)} 276" fill="none" stroke="#ff6f8f" stroke-width="1.6" stroke-linecap="round"/>`;
-  };
+  /** A red stiletto pump in profile, the ankle at (cx, 272); `dir` points the toe left (-1) or right (1). */
+  const heel = (cx: number, dir: 1 | -1) =>
+    `<g transform="translate(${cx} 271) scale(${dir * 0.82} 0.82)">
+<path d="M-7 6 C-8 9.5 -7.4 12.5 -6 15.5 L-5 27 L-2.6 27 L-1.8 17 C2 14.5 8 15.5 12 21.5 C15.5 25.8 23 27 29 26 C30.2 23.6 26.5 19.8 20.5 17.2 C15 14.6 11 11 8 7.5 C3 9.5 -2 9 -7 6 Z" fill="#d50032" stroke="#8e0020" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M12.5 22.2 C16 26 23.5 27.2 29 26.2" fill="none" stroke="#5c0016" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M-4.6 9.5 C-4.9 11 -4.6 12.5 -4 14" fill="none" stroke="#ff7c99" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M15 18.8 C19 20.4 23 21.6 26 22.6" fill="none" stroke="#ff7c99" stroke-width="1.4" stroke-linecap="round"/>
+<path d="M-6 6.6 C-1.5 9 3 9.2 7.2 7.6" fill="none" stroke="#6d0018" stroke-width="1.4" stroke-linecap="round"/></g>`;
   // The office essentials: a clipboard with the passenger checklist (wave pose only).
   const clipboard = cheer
     ? ""
@@ -97,9 +112,9 @@ export function manpatySvg(opts: { size?: number; pose?: ManpatyPose } = {}): st
   <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6d6"/><stop offset="1" stop-color="#ffe49a"/></linearGradient>
   <radialGradient id="pearl" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e8e0d4"/></radialGradient>
 </defs>
-<ellipse cx="110" cy="293" rx="62" ry="6.5" fill="#000" fill-opacity=".16"/>
-<rect x="78" y="248" width="12" height="28" rx="6" fill="url(#brassRod)" stroke="${brassLine}" stroke-width="2"/>
-<rect x="130" y="248" width="12" height="28" rx="6" fill="url(#brassRod)" stroke="${brassLine}" stroke-width="2"/>
+<ellipse cx="110" cy="294" rx="58" ry="5.5" fill="#000" fill-opacity=".16"/>
+<rect x="79" y="248" width="10" height="30" rx="5" fill="url(#brassRod)" stroke="${brassLine}" stroke-width="2"/>
+<rect x="131" y="248" width="10" height="30" rx="5" fill="url(#brassRod)" stroke="${brassLine}" stroke-width="2"/>
 ${heel(84, -1)}${heel(136, 1)}
 ${arm(leftArm)}${arm(rightArm)}
 <g transform="translate(170 54) rotate(-34)">
