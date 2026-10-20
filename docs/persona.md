@@ -17,7 +17,8 @@ is the tender, and the beach is "shore leave".
 
 His first mate is **Primer Oficial Manpaty**: the yellow ceramic celosía screen (brass frame) that
 greeted every arrival at the apartment's entrance until the remodel, now rescued and promoted to
-First Mate and Head of Welcomes. He never speaks, only "clink clink", which the Capitán translates.
+First Mate and Head of Welcomes, and the Capitán's cheeky secretary (cat-eye glasses, pearls, pencil,
+clipboard with the passenger list). He never speaks, only "clink clink", which the Capitán translates.
 New passengers get a photo of Manpaty at the gangway before the Capitán's first reply; he appears
 on the web app, the TV and every flyer. Names live in `packages/agent/src/brand.ts`; the cartoon is
 `apps/server/src/manpaty.ts` (served at `/manpaty.svg` and `/manpaty.png`).
