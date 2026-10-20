@@ -141,6 +141,23 @@ to grant admin, or to pause the ship. Their web page gets an **Admin** tab with 
 mode link. Paused = no morning programs, reminders or nudges, and non-admins get a short off-duty reply.
 Migration `004_admin.sql` adds the flag and the `ship_setting` table.
 
+### Call the Bridge (live video calls with the Capitán)
+
+A photoreal Capitán on a video call, on any phone (web page → **Puente**) and on the TV.
+**Anam** renders the avatar, an **ElevenLabs agent** listens and speaks, and our server is the brain:
+ElevenLabs calls `POST /v1/chat/completions` (OpenAI-compatible SSE, Bearer secret derived from `WEB_SECRET`)
+and the same Capitán answers with the same tools, memory and chat history (`ChatService.converse`, channel `voice`;
+the context adds spoken-reply rules). Each call carries a signed passenger session in `elevenlabs_extra_body`.
+On the TV: a 🎙 button uses a mic at the TV (as the shared seat "Puente (TV)", which asks who is speaking), and
+**Hablar en la tele** on a phone relays that phone's mic over a WebSocket (`/voice/relay/<call>`) to the TV, which
+feeds it to the avatar (hold to talk). Calls hang up after 10 minutes; the pause switch blocks new calls.
+
+Setup: add `ELEVENLABS_API_KEY` and `ANAM_API_KEY` (repository secrets → Deploy to Fly), then in the **Admin** tab →
+Capitán en vivo: **Pintar un retrato** (Flux, needs `FAL_KEY`) → **Usar este** (creates his Anam avatar) →
+**Configurar agente de voz** (creates the ElevenLabs agent pointing at this server) → paste a Spanish voice id from
+the ElevenLabs voice library → **Probar llamada**. `ELEVENLABS_AGENT_ID`, `ELEVENLABS_VOICE_ID`, `ANAM_AVATAR_ID`
+override what the Admin tab stores. On the TV, tap once to wake the Bridge (browsers need a tap before sound).
+
 ### Secrets
 
 Never commit `.env` (it is gitignored). Locally, keys live in `.env`. In GitHub, add them as **repository
@@ -153,7 +170,7 @@ rate can be checked without anyone copying keys around. On Fly, secrets go in wi
 **One button:** add a `FLY_API_TOKEN` repository secret (Fly dashboard → Tokens, or `fly tokens create org`),
 plus the channel secret (`TELEGRAM_BOT_TOKEN`), then Actions → **Deploy to Fly** → Run workflow. It tests,
 creates the app and a 1 GB `ship_data` volume on first run, copies whichever of `ANTHROPIC_API_KEY`,
-`DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FAL_KEY`, `WEB_SECRET`, `ADMIN_PASSWORD`,
+`DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FAL_KEY`, `WEB_SECRET`, `ADMIN_PASSWORD`, `ELEVENLABS_API_KEY`, `ANAM_API_KEY`,
 `PRIVACY_CONTACT` and `META_*` are set in GitHub to Fly, runs migrations if there is a database, deploys,
 and smoke-tests `/health`. Without `DATABASE_URL` the JSON store lives on the
 volume (`/data/crucero.json`) and starts empty (`SEED_SAMPLE=off`): testers board by messaging the ship.

@@ -40,8 +40,8 @@ export const FlyerBrief = z.object({
 export type FlyerBrief = z.infer<typeof FlyerBrief>;
 
 export interface ImageGenerator {
-  /** Returns image bytes (PNG/JPEG) for a portrait background. */
-  generate(prompt: string): Promise<Uint8Array>;
+  /** Returns image bytes (PNG/JPEG); a portrait flyer background unless a size is given. */
+  generate(prompt: string, size?: { width: number; height: number }): Promise<Uint8Array>;
 }
 
 /** fal.ai Flux (synchronous endpoint). FAL_MODEL defaults to fal-ai/flux/dev. */
@@ -55,11 +55,11 @@ export class FalImageGenerator implements ImageGenerator {
     this.fetchFn = fetchFn ?? fetch;
   }
 
-  async generate(prompt: string): Promise<Uint8Array> {
+  async generate(prompt: string, size = { width: W, height: H }): Promise<Uint8Array> {
     const res = await this.fetchFn(`https://fal.run/${this.model}`, {
       method: "POST",
       headers: { Authorization: `Key ${this.key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, image_size: { width: W, height: H }, num_images: 1, enable_safety_checker: true }),
+      body: JSON.stringify({ prompt, image_size: size, num_images: 1, enable_safety_checker: true }),
     });
     if (!res.ok) throw new Error(`fal ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const json = (await res.json()) as { images?: { url?: string }[] };

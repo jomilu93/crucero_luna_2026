@@ -168,14 +168,23 @@ export class ChatService {
     // Any real message also opens the window: release the morning show first if it is waiting.
     const releasedMorning = await this.releasePendingMorning(person);
 
+    if (msg.mediaUrl && !text) text = "[El pasajero envió una imagen sin texto]";
+    const reply = await this.converse(person, text, channel);
+    if (reply) await this.outbox.send(person, reply, { from: person });
+    return { person, reply, releasedMorning };
+  }
+
+  /**
+   * One Capitán turn on the passenger's shared conversation, without sending anything: the chat
+   * sends the reply itself, the voice call speaks it. Chat and voice share one history.
+   */
+  async converse(person: Person, text: string, channel: "whatsapp" | "telegram" | "web" | "voice"): Promise<string> {
+    if (!person.admin && (await isPaused(this.store))) return OFF_DUTY[person.language];
     const saved = await this.store.getConversation(person.id);
     const stale = !saved || this.now().getTime() - new Date(saved.updatedAt).getTime() > this.staleAfterMs;
     const history = stale ? [] : trimHistory(saved!.history as BetaMessageParam[], this.maxHistory);
-
-    if (msg.mediaUrl && !text) text = "[El pasajero envió una imagen sin texto]";
     const turn = await this.responder.respond(person, text, history, { channel });
     await this.store.saveConversation(person.id, trimHistory(turn.history, this.maxHistory));
-    if (turn.text) await this.outbox.send(person, turn.text, { from: person });
-    return { person, reply: turn.text, releasedMorning };
+    return turn.text;
   }
 }
