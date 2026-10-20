@@ -66,7 +66,7 @@ function canManage(person: Person, activity: Activity, host: Person | undefined)
 
 async function notAllowed(ctx: ToolContext, a: Activity, what: string): Promise<string> {
   const host = await ctx.store.getPerson(a.sponsorId);
-  return `NOT ALLOWED: only the host (${host?.name ?? a.sponsorId}) can ${what} "${a.title}". Nothing was changed. Offer to pass the request to them with send_message.`;
+  return `NOT ALLOWED: only the host (${host?.name ?? a.sponsorId}) can ${what} "${a.title}". Nothing was changed. Tell the passenger in their own language and offer to pass the request to them with send_message.`;
 }
 
 async function programFor(ctx: ToolContext, date: string, includeCancelled = false): Promise<Activity[]> {
