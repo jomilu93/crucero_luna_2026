@@ -1,7 +1,8 @@
 /**
  * Where generated images (flyers) live. Telegram fetches them by URL, the web app and the TV show them.
  *
- * - Supabase Storage (production): SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY, public bucket SUPABASE_BUCKET
+ * - Supabase Storage (production): SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (a secret key sb_secret_…, or the
+ *   legacy service_role JWT), public bucket SUPABASE_BUCKET
  *   (default "media", created on first use).
  * - Local disk (before Supabase exists): files under MEDIA_DIR (default <data dir>/media), served by this
  *   server at /media/<key>.
@@ -32,7 +33,9 @@ export class SupabaseMediaStore implements MediaStore {
   }
 
   private headers(extra: Record<string, string> = {}) {
-    return { Authorization: `Bearer ${this.cfg.serviceRoleKey}`, apikey: this.cfg.serviceRoleKey, ...extra };
+    const key = this.cfg.serviceRoleKey;
+    // New secret keys (sb_secret_…) go in apikey only; legacy service_role JWTs (eyJ…) also as a Bearer token.
+    return { ...(key.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}), apikey: key, ...extra };
   }
 
   private async ensureBucket(): Promise<void> {

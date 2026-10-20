@@ -45,11 +45,13 @@ Not built yet (see PLAN.md phases): voice notes, realtime voice + avatar, admin 
 ### Production database (Supabase)
 
 1. Create a project at supabase.com (region near Dallas, e.g. us-east-1 or us-west-1).
-2. **Database URL:** Project → Connect → **Session pooler** (IPv4; the direct host is IPv6-only and GitHub's
-   runners can't reach it). Copy the `postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`
+2. **Database URL:** the green **Connect** button in the top bar of the project page (not under API Keys) →
+   Connection String → Method: **Session pooler** (IPv4; the direct host is IPv6-only and GitHub's runners can't
+   reach it). Forgot the database password? Database → Settings → Reset database password. Copy the `postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`
    string, with your database password filled in, into the `DATABASE_URL` repository secret.
-3. **Storage:** Project Settings → API: copy the project URL into `SUPABASE_URL` and the `service_role` key
-   into `SUPABASE_SERVICE_ROLE_KEY` (server-only; never put it in a browser).
+3. **Storage:** the project URL (`https://<ref>.supabase.co`, shown under Connect and Project Settings → Data API)
+   goes into `SUPABASE_URL`; Project Settings → API Keys → a **secret key** (`sb_secret_…`, or the legacy
+   `service_role` key) goes into `SUPABASE_SERVICE_ROLE_KEY` (server-only; never the publishable key, never in a browser).
 4. Run **Deploy to Fly**: it applies `packages/db/sql/*.sql` with `pnpm db:migrate`, then the server logs
    `store: postgres` and `media: supabase storage`. The JSON pilot data is not copied over; the ship starts
    with an empty roster and everyone boards by messaging the bot.

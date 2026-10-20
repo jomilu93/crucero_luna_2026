@@ -10,7 +10,7 @@ import QRCode from "qrcode";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FlyerService, type ImageGenerator, renderFlyerPng } from "./flyer.js";
 import { createRouter } from "./http.js";
-import { DiskMediaStore } from "./media.js";
+import { DiskMediaStore, SupabaseMediaStore } from "./media.js";
 import { parseTelegramUpdate } from "./telegram.js";
 import { tvData } from "./tv.js";
 import { cabinToken, tvKey } from "./web.js";
@@ -156,6 +156,27 @@ describe("flyers", () => {
     expect(out.usedAiArt).toBe(false);
     expect(logs.join()).toMatch(/flyer art ERROR fal 500/);
   }, 30_000);
+});
+
+describe("supabase storage", () => {
+  const capture = async (key: string) => {
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    const fetchFn = (async (url: string, init: RequestInit) => (calls.push({ url, headers: init.headers as Record<string, string> }), new Response("{}"))) as unknown as typeof fetch;
+    const url = await new SupabaseMediaStore({ url: "https://x.supabase.co", serviceRoleKey: key, fetch: fetchFn }).put("flyers/a.png", new Uint8Array(PNG), "image/png");
+    return { url, calls };
+  };
+
+  it("sends a new secret key in apikey only", async () => {
+    const { url, calls } = await capture("sb_secret_abc");
+    expect(url).toBe("https://x.supabase.co/storage/v1/object/public/media/flyers/a.png");
+    expect(calls.map((c) => c.headers.apikey)).toEqual(["sb_secret_abc", "sb_secret_abc"]);
+    expect(calls.every((c) => !c.headers.Authorization)).toBe(true);
+  });
+
+  it("also sends a legacy service_role JWT as a Bearer token", async () => {
+    const { calls } = await capture("eyJhbGciOi.legacy");
+    expect(calls[1].headers.Authorization).toBe("Bearer eyJhbGciOi.legacy");
+  });
 });
 
 describe("telegram deep links", () => {
