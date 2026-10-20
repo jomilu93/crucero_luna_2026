@@ -58,8 +58,8 @@ export class Director {
   }
 
   /** The per-turn context block that precedes the passenger's words in their message. */
-  async contextFor(passenger: Person, text: string, now = this.now()): Promise<string> {
-    return `<ship_context>\n${await buildPassengerContext(this.store, { person: passenger, now, text })}\n</ship_context>`;
+  async contextFor(passenger: Person, text: string, now = this.now(), channel?: string): Promise<string> {
+    return `<ship_context>\n${await buildPassengerContext(this.store, { person: passenger, now, text, channel })}\n</ship_context>`;
   }
 
   async respond(passenger: Person, text: string, history: BetaMessageParam[] = [], opts: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice" } = {}): Promise<Turn> {
@@ -93,7 +93,7 @@ export class Director {
         {
           role: "user",
           content: [
-            { type: "text", text: await this.contextFor(passenger, text, now) },
+            { type: "text", text: await this.contextFor(passenger, text, now, opts.channel) },
             { type: "text", text },
           ],
         },

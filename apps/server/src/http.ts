@@ -7,6 +7,7 @@ import { privacyPolicyHtml } from "./privacy.js";
 import { parseTelegramUpdate } from "./telegram.js";
 import { type TvDeps, serveTv } from "./tv.js";
 import { parseTwilioInbound, validateTwilioSignature } from "./twilio.js";
+import type { VoiceService } from "./voice.js";
 import { type WebDeps, handleWeb } from "./web.js";
 
 export interface RouterDeps {
@@ -31,6 +32,8 @@ export interface RouterDeps {
   web?: WebDeps;
   tv?: TvDeps;
   diskMedia?: DiskMediaStore;
+  /** "Call the Bridge": the custom LLM endpoint ElevenLabs calls (/v1/chat/completions). */
+  voice?: VoiceService;
   /** For the landing page's "talk to the Capitán" link. */
   botUsername?: () => string | undefined;
   log?: (line: string) => void;
@@ -72,6 +75,8 @@ const send = (res: ServerResponse, status: number, body: string, type = "text/pl
  *   GET  /privacy                → the public privacy policy
  *   GET  /c/<cabin token>/…      → the passenger's web app (web.ts); POST for its forms
  *   GET  /tv/<key>               → TV mode (tv.ts); /tv/<key>/data.json for its polling
+ *   GET  /tv/<key>/call.json     → a phone's "talk on the TV" call waiting for the TV; POST /tv/<key>/call → TV mic call
+ *   POST /v1/chat/completions    → the Capitán as ElevenLabs' custom LLM (voice.ts; Bearer secret, SSE)
  *   GET  /media/<key>            → flyers stored on the local volume (before Supabase Storage)
  *   POST /webhooks/telegram      → Telegram bot updates (secret-token header, acks fast, answers asynchronously)
  *   POST /webhooks/twilio        → WhatsApp inbound via Twilio (acks fast, answers asynchronously)
@@ -88,10 +93,13 @@ export function createRouter(deps: RouterDeps) {
     try {
       if (req.method === "GET" && url.pathname === "/health") return send(res, 200, "ok");
       if (url.pathname.startsWith("/c/") && deps.web && (await handleWeb(deps.web, req, res, url))) return;
-      const tv = url.pathname.match(/^\/tv\/([A-Za-z0-9_-]+)(\/data\.json)?$/);
-      if (req.method === "GET" && tv && deps.tv) {
+      const tv = url.pathname.match(/^\/tv\/([A-Za-z0-9_-]+)(\/data\.json|\/call\.json|\/call)?$/);
+      if ((req.method === "GET" || (req.method === "POST" && tv?.[2] === "/call")) && tv && deps.tv) {
         if (tv[1] !== deps.tv.key) return send(res, 404, "not found");
-        return serveTv(deps.tv, res, tv[2] ?? "");
+        return serveTv(deps.tv, res, tv[2] ?? "", req.method);
+      }
+      if (req.method === "POST" && url.pathname === "/v1/chat/completions" && deps.voice) {
+        return deps.voice.completions(req, res, await readBody(req, 2 * 1024 * 1024));
       }
       if (req.method === "GET" && url.pathname.startsWith("/media/") && deps.diskMedia) {
         const key = decodeURIComponent(url.pathname.slice("/media/".length));

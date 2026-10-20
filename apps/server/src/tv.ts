@@ -7,12 +7,16 @@ import type { ServerResponse } from "node:http";
 import { headlineFor } from "@crucero/agent";
 import { type Activity, type Store, CRUISE_START, dayBounds, prettyDate, prettyTime, shipDate } from "@crucero/db";
 import QRCode from "qrcode";
+import { tvBridge } from "./bridge.js";
+import type { VoiceService } from "./voice.js";
 import { esc } from "./web.js";
 
 export interface TvDeps {
   store: Store;
   key: string;
   botUsername?: () => string | undefined;
+  /** Live Capitán on the TV (voice.ts): a mic button, and calls handed over from phones. */
+  voice?: VoiceService;
   now?: () => Date;
 }
 
@@ -79,14 +83,32 @@ export async function tvData(deps: TvDeps) {
   };
 }
 
-export async function serveTv(deps: TvDeps, res: ServerResponse, sub: string): Promise<void> {
+export async function serveTv(deps: TvDeps, res: ServerResponse, sub: string, method = "GET"): Promise<void> {
+  const json = (status: number, body: unknown) => {
+    res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(body));
+  };
+  if (sub === "/call.json") {
+    const call = deps.voice?.pollTvCall();
+    return json(200, { call: call ? { sessionToken: call.sessionToken, name: call.name, relay: `/voice/relay/${call.id}?k=${call.key}` } : null });
+  }
+  if (sub === "/call" && method === "POST") {
+    if (!deps.voice) return json(503, { error: "voice is not configured" });
+    try {
+      return json(200, await deps.voice.startCall(await deps.voice.tvPassenger()));
+    } catch (err) {
+      return json(503, { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
   if (sub === "/data.json") {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
     res.end(JSON.stringify(await tvData(deps)));
     return;
   }
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
-  res.end(TV_HTML.replace("__DATA_URL__", esc(`/tv/${deps.key}/data.json`)));
+  const voice = deps.voice ? await deps.voice.status() : undefined;
+  const bridge = voice?.ready ? tvBridge({ key: deps.key, portraitUrl: voice.portraitUrl }) : "";
+  res.end(TV_HTML.replace("__DATA_URL__", esc(`/tv/${deps.key}/data.json`)).replace("</body></html>", `${bridge}</body></html>`));
 }
 
 const TV_HTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

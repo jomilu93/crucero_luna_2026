@@ -23,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (113 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (121 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -53,6 +53,13 @@ fal.ai under our overlaid text (`flyer.ts`, satori + resvg, gradient fallback), 
 **Admin + app redesign (2026-10-20):** `ADMIN_PASSWORD` said in the chat → `person.admin` (caught in ChatService, never
 reaches the model); 5 admin tools (manifest, remove passenger, kid/guardian, grant admin, pause switch via
 `ship_setting`); web Admin tab; web app restyled as a cruise app (hero, bottom tabs, day chips, timeline, sign-up bar).
+
+**Call the Bridge (2026-10-20, owner's choices: photoreal avatar, ElevenLabs Agents, phone + TV mic):** `voice.ts`
+(custom LLM endpoint `/v1/chat/completions`, Anam sessions with `elevenLabsAgentSettings`, agent + avatar setup,
+phone→TV mic relay over `ws`), `bridge.ts` (phone call page, TV overlay; Anam JS SDK 4.27.1 from jsdelivr). Not yet
+tried against the real vendors: needs `ELEVENLABS_API_KEY` + `ANAM_API_KEY` on Fly and the Admin-tab setup.
+Live eval on this build (persona: check the host before cancelling, reply in the passenger's language): **39/40**,
+the one left a two-gag tone call.
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;

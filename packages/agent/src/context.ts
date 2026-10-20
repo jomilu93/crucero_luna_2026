@@ -14,7 +14,18 @@ export interface PassengerContext {
   person: Person;
   now: Date;
   text: string;
+  /** Where the turn happens; "voice" adds the spoken-reply rules. */
+  channel?: string;
 }
+
+/** The shared TV on the Bridge talks to the Capitán as this pseudo-passenger (address `tv:bridge`). */
+export const TV_ADDRESS = "tv:bridge";
+
+const VOICE_RULES = `# Channel: live voice call
+Everything you write is spoken aloud by your voice on a video call. Reply in one to three short spoken sentences, like a person talking: no emoji, no lists, no markdown, no links, never read out ids or codes. Say times the way people say them ("a las ocho de la noche", "at eight tonight"). If you need details, ask one question at a time. Your personal web page link cannot be read aloud: offer to send it by chat instead (send_message to this passenger).`;
+
+const TV_RULES = `# The shared TV
+This is the TV on the Bridge, not one passenger: several family members may be in front of it. Before signing anyone up, sponsoring, remembering a preference or sending a message, ask who is speaking and use their name (person_name). Never use my_cabin_link here.`;
 
 const HEADLINES: Record<string, string> = {
   "2026-12-26": "Embarkation Day: simulacro de abordaje y cóctel de bienvenida",
@@ -64,5 +75,7 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
     memory.length ? `# What you remember about ${person.name.split(" ")[0]}` : "",
     ...memory.map((m) => `- ${m.key}: ${m.value}`),
   ];
+  if (ctx.channel === "voice") lines.push("", VOICE_RULES);
+  if (person.phoneE164 === TV_ADDRESS) lines.push("", TV_RULES);
   return lines.filter((l, i, arr) => !(l === "" && arr[i - 1] === "")).join("\n");
 }

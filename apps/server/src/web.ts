@@ -5,6 +5,7 @@
  *   /c/<cabin token>/program?date=   → the program for a day (Dec 26 – Jan 2 chips), as a timeline
  *   /c/<cabin token>/a/<id>          → one activity: hero, who's going, sign-up bar, flyer, host actions
  *   /c/<cabin token>/new             → sponsor form
+ *   /c/<cabin token>/bridge          → "Call the Bridge": video call with the Capitán, or talk to him on the TV
  *   /c/<cabin token>/admin           → admin panel (admins only): pause switch, manifest, kids, removals, TV link
  *   /tv/<tv key>  (+ /data.json)     → TV mode for the apartment screen (tv.ts)
  *
@@ -13,6 +14,8 @@
  * "<person id>.<hmac(person id + ics token)>": unguessable, and revoked by rotating the ICS token.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { phoneBridgePage } from "./bridge.js";
+import type { VoiceService } from "./voice.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { type FlyerMaker, type Outbox, buildTools, headlineFor } from "@crucero/agent";
 import {
@@ -38,6 +41,8 @@ export interface WebDeps {
   flyers?: FlyerMaker;
   /** The bot's t.me username, for "open the chat" links; undefined on the console channel. */
   botUsername?: () => string | undefined;
+  /** Live video calls with the Capitán (voice.ts), when configured. */
+  voice?: VoiceService;
   now?: () => Date;
 }
 
@@ -89,6 +94,11 @@ const T = {
     tvSub: "Ábrelo en la tele del depa: ahora, sigue y flyers.", role: "Rol", adult: "Adulto", kid: "Niño", guardian: "Tutor", saveRole: "Guardar rol",
     makeAdmin: "Hacer admin", removeAdmin: "Quitar admin", remove: "Quitar del barco", confirmRemove: "¿Quitar a esta persona del barco? No se puede deshacer.",
     joined: "Abordó", muted: "Silenciado", noChat: "sin chat", hostsN: "organiza",
+    bridge: "Puente", callTitle: "Llamar al Capitán", callSub: "Videollamada en vivo desde el Puente, aquí o en la tele",
+    live: "Capitán en vivo", liveReady: "Listo para videollamadas", liveNot: "Falta configurar", paint: "Pintar un retrato",
+    painting: "El Capitán posa para el retrato… (~20 s)", useThis: "Usar este", agent: "Agente de voz (ElevenLabs)",
+    agentBtn: "Configurar agente de voz", agentRedo: "Volver a configurar", voiceId: "ID de voz", voiceHelp: "Elige una voz en español en la biblioteca de ElevenLabs y pega su ID.",
+    testCall: "Probar llamada", portraits: "Retratos del Capitán", avatarHelp: "Pinta retratos y elige uno: se convierte en su avatar en vivo.",
   },
   en: {
     myCruise: "My cruise", program: "Program", sponsor: "Host", today: "Today", hosting: "You host", mine: "Your plan",
@@ -109,6 +119,11 @@ const T = {
     tvSub: "Open it on the apartment TV: now, next and flyers.", role: "Role", adult: "Adult", kid: "Kid", guardian: "Guardian", saveRole: "Save role",
     makeAdmin: "Make admin", removeAdmin: "Remove admin", remove: "Remove from the ship", confirmRemove: "Remove this person from the ship? This cannot be undone.",
     joined: "Boarded", muted: "Muted", noChat: "no chat", hostsN: "hosts",
+    bridge: "Bridge", callTitle: "Call the Capitán", callSub: "Live video call from the Bridge, here or on the TV",
+    live: "Live Capitán", liveReady: "Ready for video calls", liveNot: "Needs setup", paint: "Paint a portrait",
+    painting: "The Capitán is posing for his portrait… (~20 s)", useThis: "Use this one", agent: "Voice agent (ElevenLabs)",
+    agentBtn: "Set up the voice agent", agentRedo: "Set it up again", voiceId: "Voice ID", voiceHelp: "Pick a Spanish voice in the ElevenLabs voice library and paste its ID.",
+    testCall: "Test call", portraits: "The Capitán's portraits", avatarHelp: "Paint portraits and pick one: it becomes his live avatar.",
   },
 } as const satisfies Record<"es" | "en", Record<string, string>>;
 type Strings = Record<keyof (typeof T)["es"], string>;
@@ -132,6 +147,7 @@ const ICON: Record<string, string> = {
   back: '<path d="M15 5 8 12l7 7"/>',
   chevron: '<path d="m9 5 7 7-7 7"/>',
   tv: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8"/>',
+  video: '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5z"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 };
 const icon = (name: string, size = 20, cls = "ic") =>
@@ -250,6 +266,12 @@ details.card summary .ic.go{margin-left:auto;transition:transform .2s}details[op
 .tabs a.on{color:var(--blue)}.tabs a.mid span.q{width:46px;height:46px;margin-top:-20px;border-radius:50%;display:grid;place-items:center;background:var(--blue);color:#fff;box-shadow:0 6px 16px rgba(21,101,216,.4)}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.stats div{background:var(--card);border-radius:16px;padding:12px;text-align:center;box-shadow:var(--shadow)}.stats b{display:block;font-size:24px}
 .status{display:flex;gap:14px;align-items:center}.dot{width:14px;height:14px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 6px rgba(14,138,95,.15);flex:none}.dot.off{background:var(--warn);box-shadow:0 0 0 6px rgba(194,65,12,.15)}
+.callcard{display:flex;gap:14px;align-items:center;padding:14px 16px;text-decoration:none;background:linear-gradient(135deg,#0e7a3e,#16a34a);color:#fff}
+.callcard img,.callcard .ph{width:56px;height:56px;border-radius:50%;object-fit:cover;border:3px solid var(--gold);display:grid;place-items:center;font-size:30px;background:#0f2d5c;flex:none}
+.callcard .grow{flex:1}.callcard .m{color:rgba(255,255,255,.85)}.callcard .ic.go{color:#fff}
+.portraits{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.portraits form{position:relative;margin:0}.portraits img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:14px;display:block}
+.portraits button{position:absolute;left:6px;right:6px;bottom:6px;padding:6px;font-size:12px;border-radius:10px}.portraits .use img{outline:3px solid var(--gold);outline-offset:2px}
+.ok{color:var(--ok);font-weight:700}.no{color:var(--warn);font-weight:700}
 .empty{text-align:center;padding:28px 18px;color:var(--muted)}.empty .e{font-size:40px}
 `;
 
@@ -345,6 +367,10 @@ const html = (res: ServerResponse, status: number, body: string) => {
   res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
   res.end(body);
 };
+const json = (res: ServerResponse, status: number, body: unknown) => {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(JSON.stringify(body));
+};
 const redirect = (res: ServerResponse, to: string) => {
   res.writeHead(303, { Location: to });
   res.end();
@@ -427,6 +453,28 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
       back("", out);
       return true;
     }
+    if ((sub === "/bridge/session" || sub === "/bridge/tv") && deps.voice) {
+      try {
+        json(res, 200, sub === "/bridge/tv" ? await deps.voice.requestTvCall(viewer) : await deps.voice.startCall(viewer));
+      } catch (err) {
+        json(res, 503, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return true;
+    }
+    const vadm = sub.match(/^\/admin\/voice\/(paint|avatar|agent|voiceid)$/);
+    if (vadm && admin && deps.voice) {
+      let out: string = s.saved;
+      try {
+        if (vadm[1] === "paint") await deps.voice.paintPortrait();
+        else if (vadm[1] === "avatar") await deps.voice.useAvatar(f.get("url") ?? "");
+        else if (vadm[1] === "agent") await deps.voice.setupAgent();
+        else await deps.voice.setVoice((f.get("voice_id") ?? "").trim());
+      } catch (err) {
+        out = `ERROR: ${err instanceof Error ? err.message : err}`;
+      }
+      back("/admin", out);
+      return true;
+    }
     const adm = sub.match(/^\/admin\/(pause|role|admin|remove)$/);
     if (adm && admin) {
       const person = f.get("person") ?? "";
@@ -474,9 +522,13 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
     const quick = `<div class="quick">
 <a href="/c/${esc(token)}/program"><span class="q">${icon("calendar", 24)}</span>${s.program}</a>
 <a href="/c/${esc(token)}/new"><span class="q">${icon("plus", 24)}</span>${s.sponsor}</a>
-<a href="${esc(deps.publicUrl)}/cal/${esc(viewer.icsToken)}.ics"><span class="q">${icon("clock", 24)}</span>${lang === "es" ? "Calendario" : "Calendar"}</a>
+<a href="/c/${esc(token)}/bridge"><span class="q">${icon("video", 24)}</span>${s.bridge}</a>
 ${bot ? `<a href="https://t.me/${esc(bot)}"><span class="q">${icon("chat", 24)}</span>${s.chat}</a>` : `<a href="#settings"><span class="q">${icon("gear", 24)}</span>${s.settings}</a>`}</div>`;
 
+    const voice = deps.voice ? await deps.voice.status() : undefined;
+    const callCard = voice?.ready
+      ? `<a class="card callcard" href="/c/${esc(token)}/bridge">${voice.portraitUrl ? `<img src="${esc(voice.portraitUrl)}" alt="">` : `<span class="ph">🧑‍✈️</span>`}<div class="grow"><div class="t">📞 ${s.callTitle}</div><div class="m">${s.callSub}</div></div>${icon("chevron", 18, "ic go")}</a>`
+      : "";
     const nextBlock = next ? `<h2 class="sec">${s.nextUp}</h2>${await activityFeature(deps, next, viewer, token, s, { showDate: true })}` : "";
     const rest = upcoming.slice(next ? 1 : 0);
     const plan = upcoming.length
@@ -506,7 +558,13 @@ ${bot ? `<a href="https://t.me/${esc(bot)}"><span class="q">${icon("chat", 24)}<
 <div class="actions"><button>${s.save}</button></div></form></div></details>
 <div class="card list"><a class="item" href="${esc(deps.publicUrl)}/cal/${esc(viewer.icsToken)}.ics">${icon("calendar")}<div class="grow"><div class="tt">${s.calendar}</div><div class="m">.ics · iPhone / Google</div></div>${icon("chevron", 18, "ic go")}</a></div>`;
 
-    html(res, 200, page(s.myCruise, `<section class="hero"><div class="moon"></div>${hero}</section>${quick}${nextBlock}${plan}${tiles}<div style="height:12px"></div>${settings}`, opts("")));
+    html(res, 200, page(s.myCruise, `<section class="hero"><div class="moon"></div>${hero}</section>${quick}${callCard}${nextBlock}${plan}${tiles}<div style="height:12px"></div>${settings}`, opts("")));
+    return true;
+  }
+
+  if (sub === "/bridge") {
+    const st = deps.voice ? await deps.voice.status() : undefined;
+    html(res, 200, phoneBridgePage({ lang, base: `/c/${token}`, name: viewer.name, portraitUrl: st?.portraitUrl, ready: !!st?.ready }));
     return true;
   }
 
@@ -615,6 +673,27 @@ ${canManage && live ? `<form class="card pad" method="post" action="/c/${esc(tok
 <form method="post" action="/c/${esc(token)}/admin/pause" class="actions"><input type="hidden" name="paused" value="${paused ? "off" : "on"}"><button class="${paused ? "" : "danger"}" style="flex:1">${paused ? s.resume : s.pause}</button></form></div>`;
     const stats = `<div class="stats"><div><b>${everyone.length}</b><span class="m">${s.passengers}</span></div><div><b>${acts.length}</b><span class="m">${s.activities}</span></div><div><b>${signupCount}</b><span class="m">${s.signups}</span></div></div>`;
     const tv = `<div class="card list"><a class="item" href="/tv/${esc(tvKey(deps.secret))}" target="_blank" rel="noopener">${icon("tv")}<div class="grow"><div class="tt">${s.tv}</div><div class="m">${s.tvSub}</div></div>${icon("chevron", 18, "ic go")}</a></div>`;
+    const liveSection = async () => {
+      if (!deps.voice) return "";
+      const v = await deps.voice.status();
+      const a = `/c/${esc(token)}/admin/voice`;
+      const mark = (ok: boolean, label: string) => `<div><span class="${ok ? "ok" : "no"}">${ok ? "✓" : "✗"}</span> ${label}</div>`;
+      const portraits = v.portraits.length
+        ? `<div class="portraits">${v.portraits
+            .map((u) => `<form method="post" action="${a}/avatar" class="${u === v.portraitUrl ? "use" : ""}"><input type="hidden" name="url" value="${esc(u)}"><img src="${esc(u)}" alt=""><button class="small"${v.anam ? "" : " disabled"}>${u === v.portraitUrl ? "✓" : s.useThis}</button></form>`)
+            .join("")}</div>`
+        : "";
+      return `<h2 class="sec">📞 ${s.live}</h2><div class="card pad">
+<div class="status"><span class="dot${v.ready ? "" : " off"}"></span><div style="flex:1"><div class="t">${v.ready ? s.liveReady : s.liveNot}</div>
+<div class="m">${mark(v.elevenLabs, "ELEVENLABS_API_KEY")}${mark(v.anam, "ANAM_API_KEY")}${mark(!!v.avatarId, "Avatar")}${mark(!!v.agentId, s.agent)}</div></div></div>
+${v.ready ? `<div class="actions"><a class="btn" href="/c/${esc(token)}/bridge">📞 ${s.testCall}</a></div>` : ""}</div>
+<div class="card pad"><div class="t" style="font-size:16px">${s.portraits}</div><div class="m">${s.avatarHelp}</div>${portraits}
+<form method="post" action="${a}/paint" class="actions" onsubmit="this.querySelector('button').textContent='${s.painting}'"><button class="alt"${v.canPaint ? "" : " disabled"}>🎨 ${s.paint}</button></form></div>
+<div class="card pad"><div class="t" style="font-size:16px">${s.agent}</div>${v.agentId ? `<div class="m">agent ${esc(v.agentId)}</div>` : ""}
+<form method="post" action="${a}/agent" class="actions"><button class="alt"${v.elevenLabs ? "" : " disabled"}>${v.agentId ? s.agentRedo : s.agentBtn}</button></form>
+<form method="post" action="${a}/voiceid"><label>${s.voiceId}</label><div class="actions" style="margin-top:0"><input name="voice_id" value="${esc(v.voiceId)}" style="flex:1"><button class="small alt">${s.save}</button></div>
+<div class="m" style="margin-top:6px">${s.voiceHelp} <a href="https://elevenlabs.io/app/voice-library?language=es" target="_blank" rel="noopener">ElevenLabs ↗</a></div></form></div>`;
+    };
     const rows = everyone
       .map((p) => {
         const channel = p.phoneE164?.startsWith("tg:") ? "Telegram" : p.phoneE164 ? `WhatsApp ${p.phoneE164}` : s.noChat;
@@ -635,7 +714,7 @@ ${canManage && live ? `<form class="card pad" method="post" action="/c/${esc(tok
       })
       .join("");
     const body = `<section class="hero"><div class="moon"></div><div class="eyebrow">${s.admin}</div><h1>${s.adminTitle}</h1><div class="sub">${esc(viewer.name)}</div></section>
-${status}${stats}${tv}<h2 class="sec">${s.passengers}</h2>${rows}`;
+${status}${stats}${tv}${await liveSection()}<h2 class="sec">${s.passengers}</h2>${rows}`;
     html(res, 200, page(s.admin, body, opts("/admin")));
     return true;
   }

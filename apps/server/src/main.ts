@@ -19,6 +19,7 @@ import { MetaWhatsAppOutbox } from "./meta.js";
 import { cabinUrl, tvKey } from "./web.js";
 import { TelegramOutbox, telegramWebhookSecret } from "./telegram.js";
 import { TwilioWhatsAppOutbox } from "./twilio.js";
+import { VoiceService } from "./voice.js";
 
 const env = process.env;
 const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`);
@@ -110,11 +111,12 @@ const webSecret =
 let botUsername: string | undefined;
 const signupUrl = (a: { id: string }) => (botUsername ? `https://t.me/${botUsername}?start=signup_${a.id}` : `${publicUrl}/`);
 
+const images = env.FAL_KEY ? new FalImageGenerator(env.FAL_KEY, env.FAL_MODEL || undefined) : undefined;
 const flyers = new FlyerService({
   store,
   media,
   client,
-  images: env.FAL_KEY ? new FalImageGenerator(env.FAL_KEY, env.FAL_MODEL || undefined) : undefined,
+  images,
   signupUrl,
   log,
 });
@@ -125,6 +127,28 @@ const cabinLink = (p: Parameters<typeof cabinUrl>[1]) => cabinUrl({ publicUrl, s
 const director = new Director(store, { client, outbox, flyers, cabinLink });
 const chat = new ChatService(store, director, outbox, { adminPassword: env.ADMIN_PASSWORD });
 log(env.ADMIN_PASSWORD ? "admin: password set (say it in the chat to become an admin)" : "admin: no ADMIN_PASSWORD, so nobody can become an admin from the chat");
+
+// "Call the Bridge": the Capitán's live video calls (Anam avatar + ElevenLabs voice, our brain).
+const voice = new VoiceService({
+  store,
+  chat,
+  secret: webSecret,
+  publicUrl,
+  cfg: {
+    elevenLabsKey: env.ELEVENLABS_API_KEY || undefined,
+    anamKey: env.ANAM_API_KEY || undefined,
+    agentId: env.ELEVENLABS_AGENT_ID || undefined,
+    voiceId: env.ELEVENLABS_VOICE_ID || undefined,
+    avatarId: env.ANAM_AVATAR_ID || undefined,
+  },
+  images,
+  media,
+  log,
+});
+voice
+  .status()
+  .then((v) => log(`voice: ${v.ready ? "live video calls ready" : `not ready (elevenlabs ${v.elevenLabs ? "✓" : "✗"}, anam ${v.anam ? "✓" : "✗"}, avatar ${v.avatarId ? "✓" : "✗"}, agent ${v.agentId ? "✓" : "✗"}; finish in the Admin tab)`}`))
+  .catch(() => {});
 
 // HTTP
 const telegramSecret = env.TELEGRAM_BOT_TOKEN ? telegramWebhookSecret(env.TELEGRAM_BOT_TOKEN) : undefined;
@@ -142,13 +166,18 @@ const server = createServer(
     // Only the active channel's webhook is live, so a parked channel can never board passengers.
     webhooks: channel === "console" ? undefined : [channel],
     privacyContact: env.PRIVACY_CONTACT || undefined,
-    web: { store, outbox, publicUrl, secret: webSecret, flyers, botUsername: () => botUsername },
-    tv: { store, key: tvKey(webSecret), botUsername: () => botUsername },
+    web: { store, outbox, publicUrl, secret: webSecret, flyers, voice, botUsername: () => botUsername },
+    tv: { store, key: tvKey(webSecret), voice, botUsername: () => botUsername },
+    voice,
     botUsername: () => botUsername,
     diskMedia,
     log,
   }),
 );
+// The phone → TV mic relay is a WebSocket on the same port.
+server.on("upgrade", (req, socket, head) => {
+  if (!voice.handleUpgrade(req, socket, head)) socket.destroy();
+});
 server.listen(Number(env.PORT ?? 8080), () => {
   log(`listening on ${publicUrl} (channel: ${channel})`);
   log(`TV mode: ${publicUrl}/tv/${tvKey(webSecret)}`);
