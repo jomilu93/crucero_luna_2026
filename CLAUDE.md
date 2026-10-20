@@ -23,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (101 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (113 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -50,12 +50,16 @@ the owner switched to **Telegram**: bot adapter, `tg:<chat id>` addresses, inlin
 fal.ai under our overlaid text (`flyer.ts`, satori + resvg, gradient fallback), Supabase Postgres + Storage
 (`media.ts`, disk fallback at `/media`). QR codes use `t.me/<bot>?start=signup_<id>` deep links.
 
+**Admin + app redesign (2026-10-20):** `ADMIN_PASSWORD` said in the chat → `person.admin` (caught in ChatService, never
+reaches the model); 5 admin tools (manifest, remove passenger, kid/guardian, grant admin, pause switch via
+`ship_setting`); web Admin tab; web app restyled as a cruise app (hero, bottom tabs, day chips, timeline, sign-up bar).
+
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;
    fal.ai → `FAL_KEY`; deploy; check `fly logs` (`store: postgres`, `media: supabase storage`, `flyers: flux…`,
    `TV mode: …`). Then a first real flyer, the TV on a screen, and the web link from the bot.
 2. **Pilot** with 3–5 family members on the full experience; read `fly logs`; re-run the live eval after persona
-   changes. Admin basics still missing: pause switch, remove a passenger, mark kids/guardians.
+   changes. Set `ADMIN_PASSWORD`, then remove the Meta test passenger (+16315551181) from the Admin tab.
 3. Phase 2/3 per PLAN.md: voice notes (STT/TTS), realtime voice + avatar ("Call the Bridge"), onboarding polish,
    admin page, awards ceremony.
 
