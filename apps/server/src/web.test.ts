@@ -8,7 +8,7 @@ import { ChatService, type Responder } from "@crucero/agent";
 import { MemoryStore, mx, seedSample, type Person } from "@crucero/db";
 import QRCode from "qrcode";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { FlyerService, type ImageGenerator, renderFlyerPng } from "./flyer.js";
+import { FlyerService, type ImageGenerator, imageType, renderFlyerPng } from "./flyer.js";
 import { createRouter } from "./http.js";
 import { DiskMediaStore, SupabaseMediaStore } from "./media.js";
 import { parseTelegramUpdate } from "./telegram.js";
@@ -143,6 +143,12 @@ describe("flyers", () => {
     expect((await store.getActivity("a04"))!.flyerUrl).toBe(out.url);
     expect(out.url).toMatch(/^http:\/\/ship\.test\/media\/flyers\/a04-\d+\.png$/);
   }, 30_000);
+
+  it("labels Flux's JPEG art as JPEG (a PNG label renders an empty, grey flyer)", () => {
+    expect(imageType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe("image/jpeg");
+    expect(imageType(new Uint8Array(PNG))).toBe("image/png");
+    expect(imageType(new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]))).toBe("image/webp");
+  });
 
   it("falls back to the vibe template when the image model fails", async () => {
     const store = new MemoryStore();
