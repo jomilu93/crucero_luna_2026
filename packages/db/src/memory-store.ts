@@ -11,6 +11,7 @@ import type {
   NewActivity,
   NewPerson,
   Person,
+  PersonPatch,
   Signup,
   SignupStatus,
 } from "./types.js";
@@ -23,9 +24,10 @@ interface Snapshot {
   messages: MessageLog[];
   conversations: Conversation[];
   deliveries: Delivery[];
+  settings: Record<string, unknown>;
 }
 
-const empty = (): Snapshot => ({ people: [], activities: [], signups: [], memory: [], messages: [], conversations: [], deliveries: [] });
+const empty = (): Snapshot => ({ people: [], activities: [], signups: [], memory: [], messages: [], conversations: [], deliveries: [], settings: {} });
 
 const normalize = (s: string) =>
   s
@@ -46,7 +48,8 @@ export class MemoryStore implements Store {
   constructor(opts: { file?: string; now?: () => Date } = {}) {
     this.file = opts.file;
     this.now = opts.now ?? (() => new Date());
-    this.data = this.file && existsSync(this.file) ? (JSON.parse(readFileSync(this.file, "utf8")) as Snapshot) : empty();
+    // Spread over empty() so files written before a field existed (e.g. settings) still load.
+    this.data = { ...empty(), ...(this.file && existsSync(this.file) ? (JSON.parse(readFileSync(this.file, "utf8")) as Partial<Snapshot>) : {}) };
   }
 
   /** Replace the whole dataset (used by seeding and tests). */
@@ -99,12 +102,29 @@ export class MemoryStore implements Store {
     this.persist();
     return person;
   }
-  async updatePerson(id: string, patch: Partial<Omit<Person, "id">>): Promise<Person> {
+  async updatePerson(id: string, patch: PersonPatch): Promise<Person> {
     const p = this.data.people.find((x) => x.id === id);
     if (!p) throw new Error(`person not found: ${id}`);
-    Object.assign(p, patch);
+    const { guardianId, ...rest } = patch;
+    Object.assign(p, rest);
+    if (guardianId === null) delete p.guardianId;
+    else if (guardianId !== undefined) p.guardianId = guardianId;
     this.persist();
     return p;
+  }
+
+  async removePerson(id: string): Promise<void> {
+    const live = this.data.activities.filter((a) => a.sponsorId === id && a.status !== "cancelled");
+    if (live.length) throw new Error(`still hosts ${live.map((a) => `"${a.title}" [${a.id}]`).join(", ")}; cancel those first`);
+    const gone = new Set(this.data.activities.filter((a) => a.sponsorId === id).map((a) => a.id));
+    this.data.activities = this.data.activities.filter((a) => !gone.has(a.id));
+    this.data.signups = this.data.signups.filter((s) => s.personId !== id && !gone.has(s.activityId));
+    this.data.memory = this.data.memory.filter((m) => m.personId !== id);
+    this.data.conversations = this.data.conversations.filter((c) => c.personId !== id);
+    for (const m of this.data.messages) if (m.personId === id) delete m.personId;
+    for (const p of this.data.people) if (p.guardianId === id) delete p.guardianId;
+    this.data.people = this.data.people.filter((p) => p.id !== id);
+    this.persist();
   }
 
   // Activities
@@ -207,6 +227,15 @@ export class MemoryStore implements Store {
   }
   async clearConversation(personId: string): Promise<void> {
     this.data.conversations = this.data.conversations.filter((c) => c.personId !== personId);
+    this.persist();
+  }
+
+  // Settings
+  async getSetting<T = unknown>(key: string): Promise<T | undefined> {
+    return this.data.settings[key] as T | undefined;
+  }
+  async setSetting(key: string, value: unknown): Promise<void> {
+    this.data.settings[key] = value;
     this.persist();
   }
 

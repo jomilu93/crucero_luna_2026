@@ -7,6 +7,7 @@ import type {
   NewActivity,
   NewPerson,
   Person,
+  PersonPatch,
   Signup,
   SignupStatus,
 } from "./types.js";
@@ -32,7 +33,12 @@ export interface Store {
   findPersonByPhone(phoneE164: string): Promise<Person | undefined>;
   findPersonByName(name: string): Promise<Person | undefined>;
   createPerson(input: NewPerson): Promise<Person>;
-  updatePerson(id: string, patch: Partial<Omit<Person, "id">>): Promise<Person>;
+  updatePerson(id: string, patch: PersonPatch): Promise<Person>;
+  /**
+   * Takes a passenger off the manifest with their sign-ups, memory and chat history; their cancelled
+   * activities go too and kids they guarded lose the link. Throws while they host live activities.
+   */
+  removePerson(id: string): Promise<void>;
 
   // Activities
   listActivities(q?: ActivityQuery): Promise<Activity[]>;
@@ -60,8 +66,17 @@ export interface Store {
   saveConversation(personId: string, history: unknown[]): Promise<Conversation>;
   clearConversation(personId: string): Promise<void>;
 
+  // Ship-wide settings (e.g. "paused")
+  getSetting<T = unknown>(key: string): Promise<T | undefined>;
+  setSetting(key: string, value: unknown): Promise<void>;
+
   // Scheduled-send idempotency
   wasDelivered(kind: Delivery["kind"], key: string): Promise<boolean>;
   getDelivery(kind: Delivery["kind"], key: string): Promise<Delivery | undefined>;
   markDelivered(kind: Delivery["kind"], key: string, payload?: unknown): Promise<Delivery>;
+}
+
+/** The admin pause switch: while it is on, nothing proactive goes out and only admins get real replies. */
+export async function isPaused(store: Store): Promise<boolean> {
+  return (await store.getSetting<boolean>("paused")) === true;
 }

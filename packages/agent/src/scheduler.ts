@@ -1,4 +1,4 @@
-import { type Activity, type Person, type Store, inQuietHours, prettyTime, shipDate, shipTime } from "@crucero/db";
+import { type Activity, type Person, type Store, inQuietHours, isPaused, prettyTime, shipDate, shipTime } from "@crucero/db";
 import { buildMorningBrief, type MorningMessage } from "./morning.js";
 import type { Outbox } from "./tools.js";
 
@@ -111,6 +111,7 @@ export function morningWindowStart(person: Person, date: string): string {
 export async function tick(deps: SchedulerDeps, now: Date): Promise<TickReport> {
   const { store, outbox, log = () => {} } = deps;
   const report: TickReport = { mornings: [], reminders: [], sponsorNudges: [], errors: [] };
+  if (await isPaused(store)) return report; // admin pause switch: nothing proactive goes out
   const today = shipDate(now);
   const nowHM = shipTime(now);
   const people = await store.listPeople();

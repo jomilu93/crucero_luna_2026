@@ -102,6 +102,29 @@ describe("web app and TV routes", () => {
     expect(await store.getPerson("ricardo")).toMatchObject({ language: "en", humor: "light", wakeTime: "08:15", quietHours: { start: "22:00", end: "08:00" }, muted: true });
   });
 
+  it("shows the admin panel only to admins, and runs admin actions through the admin tools", async () => {
+    const t = await token("sofia");
+    expect((await fetch(`${base}/c/${t}/admin`)).status).toBe(404);
+    expect(await (await fetch(`${base}/c/${t}`)).text()).not.toContain("/admin");
+    expect((await post(`/c/${t}/admin/pause`, { paused: "on" })).status).toBe(404);
+    await store.updatePerson("sofia", { admin: true });
+    const page = await (await fetch(`${base}/c/${t}/admin`)).text();
+    expect(page).toContain("Puente de mando");
+    expect(page).toContain(`/tv/${tvKey(SECRET)}`);
+    expect((await post(`/c/${t}/admin/pause`, { paused: "on" })).headers.get("location")).toBe(`/c/${t}/admin?ok=Listo.`);
+    expect(await store.getSetting("paused")).toBe(true);
+    await post(`/c/${t}/admin/pause`, { paused: "off" });
+    await post(`/c/${t}/admin/role`, { person: "valeria", role: "kid", guardian: "sofia" });
+    expect(await store.getPerson("valeria")).toMatchObject({ role: "kid", guardianId: "sofia" });
+    await post(`/c/${t}/admin/role`, { person: "valeria", role: "adult" });
+    const fake = await store.createPerson({ name: "Test Number", phoneE164: "+16315551181", language: "es", role: "adult" });
+    await post(`/c/${t}/admin/remove`, { person: fake.id });
+    expect(await store.getPerson(fake.id)).toBeUndefined();
+    const denied = await post(`/c/${t}/admin/remove`, { person: "ricardo" });
+    expect(decodeURIComponent(denied.headers.get("location")!)).toMatch(/still hosts/);
+    await store.updatePerson("sofia", { admin: false });
+  });
+
   it("guards TV mode with its key and serves now/next data", async () => {
     expect((await fetch(`${base}/tv/wrong`)).status).toBe(404);
     expect(await (await fetch(`${base}/tv/${tvKey(SECRET)}`)).text()).toContain("EL PUENTE");

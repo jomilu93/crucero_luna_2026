@@ -123,7 +123,8 @@ log(`flyers: ${env.FAL_KEY ? `flux via fal.ai (${env.FAL_MODEL || "fal-ai/flux/d
 // Brain
 const cabinLink = (p: Parameters<typeof cabinUrl>[1]) => cabinUrl({ publicUrl, secret: webSecret }, p);
 const director = new Director(store, { client, outbox, flyers, cabinLink });
-const chat = new ChatService(store, director, outbox);
+const chat = new ChatService(store, director, outbox, { adminPassword: env.ADMIN_PASSWORD });
+log(env.ADMIN_PASSWORD ? "admin: password set (say it in the chat to become an admin)" : "admin: no ADMIN_PASSWORD, so nobody can become an admin from the chat");
 
 // HTTP
 const telegramSecret = env.TELEGRAM_BOT_TOKEN ? telegramWebhookSecret(env.TELEGRAM_BOT_TOKEN) : undefined;

@@ -1,5 +1,6 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { type Person, type Store, shipDate } from "@crucero/db";
+import { type Person, type Store, isPaused, shipDate } from "@crucero/db";
 import { SIGNUP_BUTTON_PREFIX, deliverMorningFull, type TemplateOutbox } from "./scheduler.js";
 
 /** What the ChatService needs from the Capitán; `Director` satisfies this. */
@@ -29,8 +30,29 @@ export interface ChatServiceOptions {
   staleAfterMs?: number;
   /** Keep at most this many messages of history. Default 30. */
   maxHistory?: number;
+  /** ADMIN_PASSWORD: a passenger who sends exactly this (or "/admin <password>") becomes an admin. */
+  adminPassword?: string;
   now?: () => Date;
 }
+
+const digest = (s: string) => createHash("sha256").update(s.trim().toLowerCase()).digest();
+
+/** Case-insensitive, constant-time; "/admin <password>" works too. */
+export function isAdminPassword(text: string, password: string | undefined): boolean {
+  if (!password?.trim()) return false;
+  const said = text.trim().replace(/^\/admin(@\w+)?\s+/i, "");
+  return timingSafeEqual(digest(said), digest(password));
+}
+
+const ADMIN_WELCOME = {
+  es: "🔑 Acceso de administrador concedido. Puedes pedirme: el manifiesto completo, quitar a un pasajero, marcar niños y sus tutores, o pausar el barco. Tu página (escribe *mi enlace*) ahora tiene el panel de administración. Por seguridad, borra el mensaje con la contraseña.",
+  en: "🔑 Admin access granted. Ask me for: the full manifest, removing a passenger, marking kids and their guardians, or pausing the ship. Your page (write *my link*) now has the admin panel. For safety, delete the message with the password.",
+} as const;
+
+const OFF_DUTY = {
+  es: "🌙 El Capitán está fuera de servicio un momento: el barco está en pausa. ¡Vuelvo pronto!",
+  en: "🌙 The Capitán is off duty for a moment: the ship is paused. Back soon!",
+} as const;
 
 /** Morning template buttons. The payloads are what Twilio/Meta send back when tapped. */
 export const MORNING_BUTTONS = {
@@ -60,6 +82,7 @@ export function trimHistory(history: BetaMessageParam[], max: number): BetaMessa
 export class ChatService {
   private readonly staleAfterMs: number;
   private readonly maxHistory: number;
+  private readonly adminPassword?: string;
   private readonly now: () => Date;
 
   constructor(
@@ -70,6 +93,7 @@ export class ChatService {
   ) {
     this.staleAfterMs = opts.staleAfterMs ?? 12 * 3600 * 1000;
     this.maxHistory = opts.maxHistory ?? 30;
+    this.adminPassword = opts.adminPassword;
     this.now = opts.now ?? (() => new Date());
   }
 
@@ -100,6 +124,23 @@ export class ChatService {
   async handle(msg: InboundMessage): Promise<{ person: Person; reply?: string; releasedMorning: boolean }> {
     const { person } = await this.resolvePassenger(msg);
     const channel = msg.channel ?? "whatsapp";
+
+    // The admin password never reaches the model or the chat history.
+    if (isAdminPassword(msg.text, this.adminPassword)) {
+      await this.store.logMessage({ personId: person.id, channel, direction: "in", body: "[admin password]" });
+      const admin = person.admin ? person : await this.store.updatePerson(person.id, { admin: true });
+      const reply = ADMIN_WELCOME[admin.language];
+      await this.outbox.send(admin, reply, { from: admin });
+      return { person: admin, reply, releasedMorning: false };
+    }
+
+    // Pause switch: only admins get the real Capitán.
+    if (!person.admin && (await isPaused(this.store))) {
+      await this.store.logMessage({ personId: person.id, channel, direction: "in", body: msg.text || `[button:${msg.buttonPayload ?? ""}]` });
+      const reply = OFF_DUTY[person.language];
+      await this.outbox.send(person, reply, { from: person });
+      return { person, reply, releasedMorning: false };
+    }
 
     // Template button taps are handled without the model.
     const payload = msg.buttonPayload?.toLowerCase();

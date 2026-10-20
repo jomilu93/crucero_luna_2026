@@ -131,6 +131,16 @@ Inbound voice notes are acknowledged but not transcribed yet (Phase 2).
 
 With `DATABASE_URL` set the server uses Postgres (run `pnpm db:migrate` once); otherwise it uses the JSON dev store.
 
+### Admin access
+
+Set an `ADMIN_PASSWORD` repository secret (copied to Fly by **Deploy to Fly**). A passenger who sends exactly
+that password in the chat (case-insensitive, or `/admin <password>`) becomes an admin. The server catches it
+before the model, so it is never in the chat history; delete the message afterwards anyway. Admins can ask the
+Capitán for the full manifest, to remove a passenger (e.g. a test number), to mark kids and their guardians,
+to grant admin, or to pause the ship. Their web page gets an **Admin** tab with the same controls plus the TV
+mode link. Paused = no morning programs, reminders or nudges, and non-admins get a short off-duty reply.
+Migration `004_admin.sql` adds the flag and the `ship_setting` table.
+
 ### Secrets
 
 Never commit `.env` (it is gitignored). Locally, keys live in `.env`. In GitHub, add them as **repository
@@ -143,7 +153,7 @@ rate can be checked without anyone copying keys around. On Fly, secrets go in wi
 **One button:** add a `FLY_API_TOKEN` repository secret (Fly dashboard → Tokens, or `fly tokens create org`),
 plus the channel secret (`TELEGRAM_BOT_TOKEN`), then Actions → **Deploy to Fly** → Run workflow. It tests,
 creates the app and a 1 GB `ship_data` volume on first run, copies whichever of `ANTHROPIC_API_KEY`,
-`DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FAL_KEY`, `WEB_SECRET`,
+`DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FAL_KEY`, `WEB_SECRET`, `ADMIN_PASSWORD`,
 `PRIVACY_CONTACT` and `META_*` are set in GitHub to Fly, runs migrations if there is a database, deploys,
 and smoke-tests `/health`. Without `DATABASE_URL` the JSON store lives on the
 volume (`/data/crucero.json`) and starts empty (`SEED_SAMPLE=off`): testers board by messaging the ship.
