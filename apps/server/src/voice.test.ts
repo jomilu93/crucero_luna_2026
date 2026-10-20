@@ -108,6 +108,7 @@ describe("a call", () => {
     const anam = calls.at(-1)!;
     expect(anam.url).toBe("https://api.anam.ai/v1/auth/session-token");
     expect(anam.body.personaConfig).toMatchObject({ avatarId: "avatar_1" });
+    expect(anam.body.sessionOptions).toEqual({ videoWidth: 768, videoHeight: 1152, videoQuality: "high" }); // phone: portrait
     const el = anam.body.environment.elevenLabsAgentSettings;
     expect(el).toMatchObject({ signedUrl: "wss://eleven/signed", agentId: "agent_1" });
     expect(el.customLlmExtraBody).toBeUndefined(); // needs an override permission the agent may lack (1008)
@@ -222,6 +223,7 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
     const res = await fetch(`${base}/tv/${tvKey(SECRET)}/call`, { method: "POST" });
     expect(await res.json()).toEqual({ sessionToken: "anam_session" });
     expect(ctx.calls.at(-1)!.body.environment.elevenLabsAgentSettings.conversationConfigOverride.agent.first_message).toMatch(/^¡Ahoy! Aquí el Capitán/);
+    expect(ctx.calls.at(-1)!.body.sessionOptions).toEqual({ videoWidth: 1152, videoHeight: 768, videoQuality: "high" }); // TV: landscape
     const page = await (await fetch(`${base}/tv/${tvKey(SECRET)}`)).text();
     expect(page).toContain("Hablar con el Capitán");
     expect(page).toContain("@anam-ai/js-sdk@4.27.1");

@@ -100,7 +100,7 @@ export async function serveTv(deps: TvDeps, res: ServerResponse, sub: string, me
   if (sub === "/call" && method === "POST") {
     if (!deps.voice) return json(503, { error: "voice is not configured" });
     try {
-      return json(200, await deps.voice.startCall(await deps.voice.tvPassenger()));
+      return json(200, await deps.voice.startCall(await deps.voice.tvPassenger(), "tv"));
     } catch (err) {
       return json(503, { error: err instanceof Error ? err.message : String(err) });
     }

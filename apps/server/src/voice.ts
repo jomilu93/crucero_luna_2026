@@ -274,7 +274,7 @@ export class VoiceService {
   }
 
   /** An Anam session token for one call: avatar + ElevenLabs agent + the passenger's signed session. */
-  async startCall(person: Person): Promise<{ sessionToken: string }> {
+  async startCall(person: Person, screen: "phone" | "tv" = "phone"): Promise<{ sessionToken: string }> {
     const st = await this.status();
     if (!st.ready) throw new Error("the Capitán's video call is not set up yet (Admin tab → Capitán en vivo)");
     if (!person.admin && (await isPaused(this.deps.store))) throw new Error("the ship is paused");
@@ -291,6 +291,9 @@ export class VoiceService {
       headers: { Authorization: `Bearer ${this.deps.cfg.anamKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         personaConfig: { avatarId: st.avatarId, avatarModel: "cara-4", directorNotes: { presetStyle: "warm", expressivity: 0.6 } },
+        // Cara 4's largest frames, portrait for phones and landscape for the TV, starting on the high bitrate
+        // profile instead of ramping up from a blurry one.
+        sessionOptions: { ...(screen === "tv" ? { videoWidth: 1152, videoHeight: 768 } : { videoWidth: 768, videoHeight: 1152 }), videoQuality: "high" },
         environment: {
           elevenLabsAgentSettings: {
             signedUrl: signed.signed_url,
@@ -314,7 +317,7 @@ export class VoiceService {
 
   /** A phone asks the TV to take the call: the TV picks it up from pollTvCall and listens to the phone's mic. */
   async requestTvCall(person: Person): Promise<{ callId: string; relay: string }> {
-    const { sessionToken } = await this.startCall(person);
+    const { sessionToken } = await this.startCall(person, "tv");
     const id = randomBytes(9).toString("base64url");
     const key = this.relaySig(id);
     this.tvCalls.clear(); // one TV, one call
