@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import { Director, PERSONA, type Outbox, type ToolCallRecord } from "@crucero/agent";
+import { Director, PERSONA, TV_ADDRESS, type Outbox, type ToolCallRecord } from "@crucero/agent";
 import { MemoryStore, seedSample } from "@crucero/db";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -21,10 +21,19 @@ const here = dirname(fileURLToPath(import.meta.url));
 interface ToolExpectation { name: string; args?: Record<string, unknown> }
 interface Case {
   id: string;
+  /** A seed passenger id; "tv" = the shared TV seat on the Bridge; "new" = a passenger who just boarded. */
   as: string;
   at: string;
   say: string;
-  setup?: { fill_activity?: string };
+  /** "voice" simulates a live video call (spoken replies). */
+  channel?: "voice";
+  setup?: {
+    fill_activity?: string;
+    /** The passenger said the admin password. */
+    admin?: boolean;
+    /** Extra passengers on the manifest, e.g. a test number to remove. */
+    add_passengers?: { name: string; phone: string }[];
+  };
   expect_tools?: ToolExpectation[];
   expect_tools_any?: string[];
   forbid_tools?: string[];
@@ -32,6 +41,9 @@ interface Case {
   reply_should_ask?: boolean;
   reply_must_mention_any?: string[];
   reply_must_not_mention_any?: string[];
+  reply_max_chars?: number;
+  /** Spoken replies: no emoji, no links. */
+  reply_speakable?: boolean;
 }
 
 const { cases } = JSON.parse(readFileSync(join(here, "cases.json"), "utf8")) as { cases: Case[] };
@@ -73,11 +85,15 @@ async function runCase(c: Case) {
     const going = (await store.listSignups(a.id)).filter((s) => s.status === "going").length;
     await store.updateActivity(a.id, { capacity: going });
   }
+  for (const p of c.setup?.add_passengers ?? []) await store.createPerson({ name: p.name, phoneE164: p.phone, language: "es", role: "adult" });
+  if (c.as === "tv") await store.createPerson({ name: "Puente (TV)", phoneE164: TV_ADDRESS, language: "es", role: "adult", muted: true });
+  if (c.as === "new") await store.createPerson({ name: "Lupita", phoneE164: "tg:4242", language: "es", role: "adult" });
   const sent: { to: string; text: string }[] = [];
   const outbox: Outbox = { send: async (to, text) => void sent.push({ to: to === "everyone" ? "everyone" : to.name, text }) };
   const director = new Director(store, { outbox, now: () => now });
-  const passenger = (await store.getPerson(c.as))!;
-  const turn = await director.respond(passenger, c.say);
+  let passenger = c.as === "tv" ? (await store.findPersonByPhone(TV_ADDRESS))! : c.as === "new" ? (await store.findPersonByPhone("tg:4242"))! : (await store.getPerson(c.as))!;
+  if (c.setup?.admin) passenger = await store.updatePerson(passenger.id, { admin: true });
+  const turn = await director.respond(passenger, c.say, [], { channel: c.channel });
   const calls: ToolCallRecord[] = turn.toolCalls;
   const failures: string[] = [];
 
@@ -95,12 +111,18 @@ async function runCase(c: Case) {
   if (c.reply_must_mention_any && !c.reply_must_mention_any.some((m) => turn.text.toLowerCase().includes(m))) failures.push(`reply should mention one of ${c.reply_must_mention_any.join("/")}`);
   if (c.reply_must_not_mention_any) for (const m of c.reply_must_not_mention_any) if (turn.text.toLowerCase().includes(m.toLowerCase())) failures.push(`reply leaked "${m}"`);
   if (turn.text.length > 900) failures.push(`reply too long (${turn.text.length} chars) for WhatsApp`);
+  if (c.reply_max_chars && turn.text.length > c.reply_max_chars) failures.push(`reply too long (${turn.text.length} > ${c.reply_max_chars} chars)`);
+  if (c.reply_speakable) {
+    if (/\p{Extended_Pictographic}/u.test(turn.text)) failures.push("spoken reply has emoji");
+    if (/https?:\/\//.test(turn.text)) failures.push("spoken reply reads out a link");
+    if (/\[[A-Za-z0-9-]{3,12}\]|^\s*[-•*] /m.test(turn.text)) failures.push("spoken reply has ids or a list");
+  }
 
   let verdict: z.infer<typeof Verdict> | undefined;
   if (judge) {
     // The judge sees what the Capitán saw (persona + passenger context with today's program),
     // so facts taken from the context are not mistaken for invented ones.
-    const context = `${PERSONA}\n\n${await director.contextFor(passenger, c.say, now)}`;
+    const context = `${PERSONA}\n\n${await director.contextFor(passenger, c.say, now, c.channel)}`;
     try {
       const res = await client.messages.parse({
         model: process.env.HELPER_MODEL ?? "claude-haiku-5-5",

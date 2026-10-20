@@ -23,13 +23,13 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (125 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (129 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
 
 ## Status (2026-10-19)
-Done: plan, persona, db (+ Postgres schema), agent + 14 tools, CLI harness, morning generator, 40-case eval,
+Done: plan, persona, db (+ Postgres schema), agent + 14 tools, CLI harness, morning generator, eval (40 cases, 51 since the creative pass),
 ChatService (onboarding, history), scheduler (`tick`), ICS feeds, Meta + Twilio adapters, HTTP server,
 Dockerfile + fly.toml, CI.
 Live eval (CI `live-eval`, judge on): run 1 15/40 (judge schema crashes), run 2 32/40 after harness fixes and
@@ -65,6 +65,10 @@ the one left a two-gag tone call.
 Victoria*), the captain is **Capitán Lunáticus** (Greek), and the mascot **la Primera Oficial Manpaty** (she/her; cheeky secretary) is the old yellow
 ceramic celosía entrance screen with a brass frame, drawn as SVG in `apps/server/src/manpaty.ts`. Names live in
 `packages/agent/src/brand.ts`. New passengers get a Manpaty welcome photo (`welcomePhotoUrl`).
+The eval now has 51 cases: the original 40 plus admin (remove asks first, pause, kid/guardian, no admin talk
+with non-admins), voice calls (spoken, short, no emoji/links), the shared TV seat (asks who is speaking), the
+ship/captain names, Manpaty (she/her) and new-passenger onboarding. Harness: `as: "tv"|"new"`, `channel: "voice"`,
+`setup.admin`, `setup.add_passengers`, `reply_speakable`, `reply_max_chars`.
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;

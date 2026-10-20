@@ -228,6 +228,21 @@ describe("supabase storage", () => {
   });
 });
 
+describe("Manpaty", () => {
+  it("is the cheeky secretary: glasses, pearls, red nails and heels, no wreath; the wave pose holds the clipboard", async () => {
+    const { manpatySvg } = await import("./manpaty.js");
+    const wave = manpatySvg();
+    const cheer = manpatySvg({ pose: "cheer" });
+    expect(wave).toContain('stroke="#c62828"'); // red cat-eye glasses
+    expect(wave).toContain('id="pearl"');
+    expect((wave.match(/fill="#d50032"/g) ?? []).length).toBeGreaterThanOrEqual(10 + 2); // nails on both hands + two pumps
+    expect(wave).not.toMatch(/<circle[^>]+stroke="#2e7d32"/); // no Christmas wreath (the green ticks on the checklist stay)
+    expect(wave).toContain("#9c6b3f"); // the clipboard
+    expect(cheer).not.toContain("#9c6b3f");
+    expect(wave).toMatch(/^<svg[^>]+viewBox="0 0 220 300"/);
+  });
+});
+
 describe("telegram deep links", () => {
   it("turns /start signup_<id> from a flyer QR into a sign-up tap", () => {
     const u = parseTelegramUpdate({ update_id: 1, message: { message_id: 1, from: { id: 7, first_name: "Ana" }, chat: { id: 7, type: "private" }, text: "/start signup_a04" } });
