@@ -85,6 +85,13 @@ function fonts() {
 
 /** Twemoji SVGs for emoji graphemes (satori has no emoji font). Cached; a blank on failure. */
 const emojiCache = new Map<string, string>();
+/** Flux returns JPEG; a mislabeled data URL renders as nothing (a grey flyer), so sniff the bytes. */
+export function imageType(b: Uint8Array): string {
+  if (b[0] === 0xff && b[1] === 0xd8) return "image/jpeg";
+  if (b[0] === 0x52 && b[1] === 0x49 && b[8] === 0x57 && b[9] === 0x45) return "image/webp";
+  return "image/png";
+}
+
 const BLANK = "data:image/svg+xml;base64," + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>').toString("base64");
 async function loadEmoji(segment: string, fetchFn: typeof fetch): Promise<string> {
   const code = [...segment].map((c) => c.codePointAt(0)!.toString(16)).filter((cp) => cp !== "fe0f").join("-");
@@ -121,7 +128,7 @@ const el = (type: string, style: Record<string, unknown>, children?: unknown, ex
 export async function renderFlyerPng(l: FlyerLayout, fetchFn: typeof fetch = fetch): Promise<Uint8Array> {
   const style = VIBE_STYLE[l.vibe];
   const bg = l.background
-    ? el("img", { position: "absolute", top: 0, left: 0, width: W, height: H, objectFit: "cover" }, undefined, { src: `data:image/png;base64,${Buffer.from(l.background).toString("base64")}`, width: W, height: H })
+    ? el("img", { position: "absolute", top: 0, left: 0, width: W, height: H, objectFit: "cover" }, undefined, { src: `data:${imageType(l.background)};base64,${Buffer.from(l.background).toString("base64")}`, width: W, height: H })
     : el("div", { position: "absolute", top: 0, left: 0, width: W, height: H, backgroundImage: style.gradient });
   const shade = el("div", { position: "absolute", top: 0, left: 0, width: W, height: H, backgroundImage: "linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.78) 100%)" });
 
