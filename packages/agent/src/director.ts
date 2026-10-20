@@ -3,7 +3,7 @@ import type { BetaMessage, BetaMessageParam } from "@anthropic-ai/sdk/resources/
 import type { Person, Store } from "@crucero/db";
 import { buildPassengerContext } from "./context.js";
 import { PERSONA } from "./persona.js";
-import { buildTools, type Outbox, type ToolCallRecord } from "./tools.js";
+import { buildTools, type FlyerMaker, type Outbox, type ToolCallRecord } from "./tools.js";
 
 export interface DirectorOptions {
   client?: Anthropic;
@@ -11,6 +11,8 @@ export interface DirectorOptions {
   /** Effort for chat turns. 'low' keeps replies fast and cheap; raise for the morning show. */
   effort?: "low" | "medium" | "high";
   outbox: Outbox;
+  flyers?: FlyerMaker;
+  cabinLink?: (person: Person) => string;
   now?: () => Date;
 }
 
@@ -38,6 +40,8 @@ export class Director {
   readonly model: string;
   readonly effort: "low" | "medium" | "high";
   private readonly outbox: Outbox;
+  private readonly flyers?: FlyerMaker;
+  private readonly cabinLink?: (person: Person) => string;
   private readonly now: () => Date;
 
   constructor(
@@ -48,6 +52,8 @@ export class Director {
     this.model = opts.model ?? process.env.DIRECTOR_MODEL ?? "claude-opus-5-5";
     this.effort = opts.effort ?? "low";
     this.outbox = opts.outbox;
+    this.flyers = opts.flyers;
+    this.cabinLink = opts.cabinLink;
     this.now = opts.now ?? (() => new Date());
   }
 
@@ -65,6 +71,8 @@ export class Director {
       now,
       outbox: this.outbox,
       channel: opts.channel ?? "cli",
+      flyers: this.flyers,
+      cabinLink: this.cabinLink,
       onToolCall: (rec) => toolCalls.push(rec),
     });
     await this.store.logMessage({ personId: passenger.id, channel: opts.channel ?? "cli", direction: "in", body: text });

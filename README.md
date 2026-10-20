@@ -12,16 +12,49 @@ The full build plan is in [`PLAN.md`](PLAN.md); the persona is in [`docs/persona
 | Path | What it is |
 |---|---|
 | `packages/db` | Domain types, the `Store` contract, an in-memory/JSON `MemoryStore` for dev, ship-clock helpers (fixed UTC-6), a sample roster + program, and the Postgres schema (`sql/001_init.sql`) for Supabase |
-| `packages/agent` | The Capitán: cached persona prefix, per-passenger context, 14 tools (program, sign-ups, sponsoring, reminders, memory, preferences, flyers, weather), the `Director` class on the Anthropic Tool Runner, and the morning-program generator with structured output |
+| `packages/agent` | The Capitán: cached persona prefix, per-turn `<ship_context>`, 15 tools (program, sign-ups, sponsoring, messages, memory, preferences, flyers, web link, weather) with permissions and quiet hours enforced in code, the `Director` class on the Anthropic Tool Runner, and the morning-program generator with structured output |
 | `apps/cli` | `pnpm chat`: talk to the Capitán as any passenger at any ship time. `pnpm morning`: generate everyone's morning program for a date |
-| `apps/server` | The ship's one process: WhatsApp webhooks for **Meta Cloud API direct** (preferred) and Twilio (alternative), both signature-validated, acking fast and replying asynchronously; per-passenger calendar feeds (`/cal/<token>.ics`); the minute scheduler (morning program, T-30 reminders with guardian routing, T-60 sponsor nudges) |
+| `apps/server` | The ship's one process: the chat webhook (**Telegram** now; Meta Cloud API and Twilio parked), the **web app** (`/c/<cabin token>`), **TV mode** (`/tv/<key>`), the **flyer** renderer (Claude brief + Flux art + overlaid text), media at `/media` or Supabase Storage, calendar feeds (`/cal/<token>.ics`), and the minute scheduler (morning program, T-30 reminders with guardian routing, T-60 sponsor nudges) |
 | `evals` | 40 realistic WhatsApp-style messages (Spanish, English, Spanglish, typos, kids, edge cases) with expected tool behavior, plus an optional tone judge |
 
 Also in `packages/db`: `PgStore`, the production store on Postgres, tested against a real in-process Postgres (PGlite).
 In `packages/agent`: `ChatService` (boards new numbers from their WhatsApp profile name, keeps per-passenger history,
 handles the morning template buttons without the model) and `tick`, the idempotent scheduler pass.
 
-Not built yet (see PLAN.md phases): web app + TV mode, flyer image pipeline, voice/video, deployment config.
+Not built yet (see PLAN.md phases): voice notes, realtime voice + avatar, admin page, awards.
+
+### The web app, TV mode and flyers
+
+- **Web app.** Every passenger has a private page at `/c/<id>.<signature>`; the Capitán hands it out
+  (`my_cabin_link`, also mentioned during onboarding). It shows "Mi crucero" (upcoming plan, settings, calendar
+  link), the program by day, activity pages with Voy / Tal vez / No voy, a sponsor form with an optional
+  flyer, and host-only cancel. Every write runs the Capitán's own tools, so the rules match the chat. Rotating
+  a passenger's ICS token revokes their link. Signatures use `WEB_SECRET` (or a secret derived from the
+  bot token when unset).
+- **TV mode.** Open the URL printed at boot (`fly logs` → `TV mode: https://…/tv/<key>`) on the apartment
+  TV in full screen. It refreshes itself: clock, now / next with a countdown and a sign-up QR, today's
+  program (before the cruise: the next day with activities and a countdown to sailing), rotating flyers,
+  and a QR to open the Capitán's chat.
+- **Flyers.** "Hazme un flyer" in the chat or the web form: Claude writes the headline, tagline and art
+  direction; Flux via fal.ai paints the background (`FAL_KEY`, optional `FAL_MODEL`, default
+  `fal-ai/flux/dev`); the server overlays title, date, place, host and a QR that opens the chat and signs
+  the scanner up (`t.me/<bot>?start=signup_<id>`). Without `FAL_KEY`, or if the image call fails, a designed
+  gradient per vibe is used. PNGs go to Supabase Storage (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`,
+  public bucket `media`, created automatically) or, before that exists, to the data volume at `/media`.
+
+### Production database (Supabase)
+
+1. Create a project at supabase.com (region near Dallas, e.g. us-east-1 or us-west-1).
+2. **Database URL:** the green **Connect** button in the top bar of the project page (not under API Keys) →
+   Connection String → Method: **Session pooler** (IPv4; the direct host is IPv6-only and GitHub's runners can't
+   reach it). Forgot the database password? Database → Settings → Reset database password. Copy the `postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`
+   string, with your database password filled in, into the `DATABASE_URL` repository secret.
+3. **Storage:** the project URL (`https://<ref>.supabase.co`, shown under Connect and Project Settings → Data API)
+   goes into `SUPABASE_URL`; Project Settings → API Keys → a **secret key** (`sb_secret_…`, or the legacy
+   `service_role` key) goes into `SUPABASE_SERVICE_ROLE_KEY` (server-only; never the publishable key, never in a browser).
+4. Run **Deploy to Fly**: it applies `packages/db/sql/*.sql` with `pnpm db:migrate`, then the server logs
+   `store: postgres` and `media: supabase storage`. The JSON pilot data is not copied over; the ship starts
+   with an empty roster and everyone boards by messaging the bot.
 
 ## Quick start
 
@@ -108,10 +141,11 @@ rate can be checked without anyone copying keys around. On Fly, secrets go in wi
 ### Deploying
 
 **One button:** add a `FLY_API_TOKEN` repository secret (Fly dashboard → Tokens, or `fly tokens create org`),
-plus the `META_*` secrets (and `DATABASE_URL` once Supabase exists), then Actions → **Deploy to Fly** → Run
-workflow. It tests, creates the app and a 1 GB `ship_data` volume on first run, copies whichever of
-`ANTHROPIC_API_KEY`, `DATABASE_URL`, `META_*` are set in GitHub to Fly, runs migrations if there is a
-database, deploys, and prints the Meta callback URL. Without `DATABASE_URL` the JSON store lives on the
+plus the channel secret (`TELEGRAM_BOT_TOKEN`), then Actions → **Deploy to Fly** → Run workflow. It tests,
+creates the app and a 1 GB `ship_data` volume on first run, copies whichever of `ANTHROPIC_API_KEY`,
+`DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FAL_KEY`, `WEB_SECRET`,
+`PRIVACY_CONTACT` and `META_*` are set in GitHub to Fly, runs migrations if there is a database, deploys,
+and smoke-tests `/health`. Without `DATABASE_URL` the JSON store lives on the
 volume (`/data/crucero.json`) and starts empty (`SEED_SAMPLE=off`): testers board by messaging the ship.
 
 By hand: `Dockerfile` + `fly.toml` run the server as one always-on machine: `fly launch --no-deploy --copy-config`,

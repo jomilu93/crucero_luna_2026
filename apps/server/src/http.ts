@@ -1,10 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { buildPersonalCalendar, type ChatService } from "@crucero/agent";
 import type { Store } from "@crucero/db";
+import { type DiskMediaStore, mediaContentType } from "./media.js";
 import { parseMetaWebhook, validateMetaSignature } from "./meta.js";
 import { privacyPolicyHtml } from "./privacy.js";
 import { parseTelegramUpdate } from "./telegram.js";
+import { type TvDeps, serveTv } from "./tv.js";
 import { parseTwilioInbound, validateTwilioSignature } from "./twilio.js";
+import { type WebDeps, handleWeb } from "./web.js";
 
 export interface RouterDeps {
   store: Store;
@@ -24,6 +27,12 @@ export interface RouterDeps {
   answerTelegramCallback?: (callbackQueryId: string) => Promise<void>;
   /** Which webhook routes are live; the others answer 404. Default: all. */
   webhooks?: ("meta" | "twilio" | "telegram")[];
+  /** Web app (/c/…), TV mode (/tv/<key>), and locally stored media (/media/…), when configured. */
+  web?: WebDeps;
+  tv?: TvDeps;
+  diskMedia?: DiskMediaStore;
+  /** For the landing page's "talk to the Capitán" link. */
+  botUsername?: () => string | undefined;
   log?: (line: string) => void;
 }
 
@@ -61,6 +70,9 @@ const send = (res: ServerResponse, status: number, body: string, type = "text/pl
  * Routes:
  *   GET  /health                 → ok
  *   GET  /privacy                → the public privacy policy
+ *   GET  /c/<cabin token>/…      → the passenger's web app (web.ts); POST for its forms
+ *   GET  /tv/<key>               → TV mode (tv.ts); /tv/<key>/data.json for its polling
+ *   GET  /media/<key>            → flyers stored on the local volume (before Supabase Storage)
  *   POST /webhooks/telegram      → Telegram bot updates (secret-token header, acks fast, answers asynchronously)
  *   POST /webhooks/twilio        → WhatsApp inbound via Twilio (acks fast, answers asynchronously)
  *   GET  /webhooks/meta          → Meta webhook verification handshake
@@ -75,6 +87,32 @@ export function createRouter(deps: RouterDeps) {
     const url = new URL(req.url ?? "/", deps.publicUrl);
     try {
       if (req.method === "GET" && url.pathname === "/health") return send(res, 200, "ok");
+      if (url.pathname.startsWith("/c/") && deps.web && (await handleWeb(deps.web, req, res, url))) return;
+      const tv = url.pathname.match(/^\/tv\/([A-Za-z0-9_-]+)(\/data\.json)?$/);
+      if (req.method === "GET" && tv && deps.tv) {
+        if (tv[1] !== deps.tv.key) return send(res, 404, "not found");
+        return serveTv(deps.tv, res, tv[2] ?? "");
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/media/") && deps.diskMedia) {
+        const key = decodeURIComponent(url.pathname.slice("/media/".length));
+        const bytes = await deps.diskMedia.read(key);
+        if (!bytes) return send(res, 404, "not found");
+        res.writeHead(200, { "Content-Type": mediaContentType(key), "Content-Length": bytes.length, "Cache-Control": "public, max-age=31536000, immutable" });
+        res.end(bytes);
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/") {
+        const bot = deps.botUsername?.();
+        return send(
+          res,
+          200,
+          `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Crucero Luna 2026</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f4c81;color:#fff;font:18px/1.5 system-ui,sans-serif;text-align:center;padding:16px}a{color:#ffd166}</style></head>
+<body><div><div style="font-size:64px">🌙🛳️</div><h1>Crucero Luna 2026</h1><p>Acapulco · 26 dic 2026 – 2 ene 2027</p>
+${bot ? `<p><a href="https://t.me/${bot}">Habla con el Capitán Lunático en Telegram · @${bot}</a></p>` : ""}<p style="font-size:14px"><a href="/privacy">Aviso de privacidad · Privacy</a></p></div></body></html>`,
+          "text/html; charset=utf-8",
+        );
+      }
       if (req.method === "GET" && url.pathname === "/privacy") return send(res, 200, privacyPolicyHtml(deps.privacyContact), "text/html; charset=utf-8");
 
       if (req.method === "POST" && url.pathname === "/webhooks/telegram" && live("telegram")) {
