@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { buildPersonalCalendar, type ChatService } from "@crucero/agent";
+import { SHIP_FORMER_NAME, SHIP_NAME, VOYAGE_NAME, buildPersonalCalendar, type ChatService } from "@crucero/agent";
 import type { Store } from "@crucero/db";
 import { manpatyPng, manpatySvg } from "./manpaty.js";
 import { type DiskMediaStore, mediaContentType } from "./media.js";
@@ -116,9 +116,9 @@ export function createRouter(deps: RouterDeps) {
         return send(
           res,
           200,
-          `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Moon of the Seas · Crucero Luna 2026</title>
+          `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${SHIP_NAME} · ${VOYAGE_NAME}</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f4c81;color:#fff;font:18px/1.5 system-ui,sans-serif;text-align:center;padding:16px}a{color:#ffd166}</style></head>
-<body><div><img src="/manpaty.svg?pose=cheer" alt="Manpaty" width="140"><h1>Moon of the Seas</h1><p style="opacity:.75;font-style:italic;margin-top:-10px">anteriormente Fondo de Cristal Victoria</p><p>Crucero Luna 2026 · Acapulco · 26 dic 2026 – 2 ene 2027</p>
+<body><div><img src="/manpaty.svg?pose=cheer" alt="Manpaty" width="140"><h1>${SHIP_NAME}</h1><p style="opacity:.75;font-style:italic;margin-top:-10px">anteriormente ${SHIP_FORMER_NAME}</p><p>${VOYAGE_NAME} · Acapulco · 26 dic 2026 – 2 ene 2027</p>
 ${bot ? `<p><a href="https://t.me/${bot}">Habla con el Capitán Lunáticus en Telegram · @${bot}</a></p>` : ""}<p style="font-size:14px"><a href="/privacy">Aviso de privacidad · Privacy</a></p></div></body></html>`,
           "text/html; charset=utf-8",
         );

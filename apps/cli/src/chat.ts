@@ -10,7 +10,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { Director } from "@crucero/agent";
+import { CAPTAIN_NAME, Director, SHIP_NAME } from "@crucero/agent";
 import { consoleOutbox, describePerson, openStore, parseArgs } from "./shared.js";
 
 const args = parseArgs(process.argv.slice(2));
@@ -27,7 +27,7 @@ const director = new Director(store, { outbox: consoleOutbox, now });
 let history: BetaMessageParam[] = [];
 let trace = Boolean(args.trace);
 
-console.log(`🚢 Moon of the Seas · Capitán Lunáticus (${director.model}, effort ${director.effort})`);
+console.log(`🚢 ${SHIP_NAME} · ${CAPTAIN_NAME} (${director.model}, effort ${director.effort})`);
 console.log(`   Passenger: ${describePerson(passenger)} · ship time ${now().toISOString()}`);
 console.log(`   Commands: /who <name|id> · /tools · /reset · /program · /quit\n`);
 

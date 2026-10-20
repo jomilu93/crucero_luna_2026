@@ -134,7 +134,7 @@ describe("web app and TV routes", () => {
     const home = await (await fetch(`${base}/c/${await token("valeria")}`)).text();
     expect(home).toContain("/manpaty.svg");
     expect(home).toContain("anteriormente Fondo de Cristal Victoria");
-    expect(home).toContain("MOON OF THE SEAS");
+    expect(home).toContain("MOONSHINE OF THE SEAS");
   });
 
   it("guards TV mode with its key and serves now/next data", async () => {

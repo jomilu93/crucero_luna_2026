@@ -3,6 +3,7 @@
  * the TV page loads. Both use the Anam JS SDK from a CDN; the phone→TV mic relay streams 16 kHz
  * 16-bit PCM over a WebSocket and the TV feeds it to the avatar as its microphone.
  */
+import { SHIP_NAME } from "@crucero/agent";
 import { esc } from "./web.js";
 
 export const ANAM_SDK = "https://cdn.jsdelivr.net/npm/@anam-ai/js-sdk@4.27.1/+esm";
@@ -59,7 +60,7 @@ export function phoneBridgePage(o: PhoneBridgeOpts): string {
   const es = o.lang === "es";
   const S = {
     title: es ? "El Puente" : "The Bridge",
-    sub: es ? "Videollamada desde el Puente del Moon of the Seas" : "Video call from the Bridge of the Moon of the Seas",
+    sub: es ? `Videollamada desde el Puente del ${SHIP_NAME}` : `Video call from the Bridge of the ${SHIP_NAME}`,
     call: es ? "Llamar al Capitán" : "Call the Capitán",
     tv: es ? "Hablar en la tele" : "Talk on the TV",
     back: es ? "Volver" : "Back",
@@ -80,10 +81,10 @@ export function phoneBridgePage(o: PhoneBridgeOpts): string {
   };
   const face = o.portraitUrl ? `<img src="${esc(o.portraitUrl)}" alt="">` : `<div class="ph">🧑‍✈️</div>`;
   return `<!doctype html><html lang="${o.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1f3f"><title>${S.title} · Moon of the Seas</title>
+<meta name="theme-color" content="#0b1f3f"><title>${S.title} · ${SHIP_NAME}</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"><style>${PHONE_CSS}</style></head><body>
 <div class="wrap">
-  <div class="top"><a href="${esc(o.base)}">‹ ${S.back}</a><span class="sub">🌙 Moon of the Seas</span></div>
+  <div class="top"><a href="${esc(o.base)}">‹ ${S.back}</a><span class="sub">🌙 ${SHIP_NAME}</span></div>
   <div class="who" id="who"><div class="ring">${face}</div><h1>Capitán Lunáticus</h1><div class="sub">${S.sub}</div><div class="status" id="status">${o.ready ? "" : S.notReady}</div></div>
   <div class="remote" id="remote"><button class="hold" id="hold"><span>🎙️</span>${S.hold}</button><div class="note">${S.tvNote}</div><div class="status" id="rstatus"></div></div>
   <div class="btns" id="btns">

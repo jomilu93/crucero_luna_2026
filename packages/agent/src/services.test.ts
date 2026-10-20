@@ -57,7 +57,7 @@ describe("ChatService", () => {
     const outbox: TemplateOutbox = { send: async (to, text, opts) => void sent.push({ to: to === "everyone" ? "everyone" : to.id, text, mediaUrl: opts?.mediaUrl }), sendTemplate: async () => {} };
     const svc = new ChatService(store, echoResponder, outbox, { now: () => at, welcomePhotoUrl: "https://ship.test/manpaty.png" });
     const r = await svc.handle({ phoneE164: "tg:42", text: "hola", profileName: "Lupita", channel: "telegram" });
-    expect(sent[0]).toMatchObject({ to: r.person.id, mediaUrl: "https://ship.test/manpaty.png", text: expect.stringMatching(/Manpaty, Primera Oficial del Moon of the Seas/) });
+    expect(sent[0]).toMatchObject({ to: r.person.id, mediaUrl: "https://ship.test/manpaty.png", text: expect.stringMatching(/Manpaty, Primera Oficial del Moonshine of the Seas/) });
     expect(sent[1]).toMatchObject({ text: "echo(Lupita): hola" });
     await svc.handle({ phoneE164: "tg:42", text: "otra vez" });
     expect(sent.filter((m) => m.mediaUrl)).toHaveLength(1);
