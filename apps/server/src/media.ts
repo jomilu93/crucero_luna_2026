@@ -26,10 +26,13 @@ export class SupabaseMediaStore implements MediaStore {
   private readonly fetchFn: typeof fetch;
   private readonly bucket: string;
   private bucketReady = false;
+  private readonly base: string;
 
   constructor(private readonly cfg: SupabaseMediaConfig) {
     this.fetchFn = cfg.fetch ?? fetch;
     this.bucket = cfg.bucket ?? "media";
+    // Only the origin counts: the dashboard also shows the URL as https://<ref>.supabase.co/rest/v1/.
+    this.base = new URL(cfg.url).origin;
   }
 
   private headers(extra: Record<string, string> = {}) {
@@ -40,7 +43,7 @@ export class SupabaseMediaStore implements MediaStore {
 
   private async ensureBucket(): Promise<void> {
     if (this.bucketReady) return;
-    const res = await this.fetchFn(`${this.cfg.url}/storage/v1/bucket`, {
+    const res = await this.fetchFn(`${this.base}/storage/v1/bucket`, {
       method: "POST",
       headers: this.headers({ "Content-Type": "application/json" }),
       body: JSON.stringify({ id: this.bucket, name: this.bucket, public: true }),
@@ -52,13 +55,13 @@ export class SupabaseMediaStore implements MediaStore {
 
   async put(key: string, bytes: Uint8Array, contentType: string): Promise<string> {
     await this.ensureBucket();
-    const res = await this.fetchFn(`${this.cfg.url}/storage/v1/object/${this.bucket}/${key}`, {
+    const res = await this.fetchFn(`${this.base}/storage/v1/object/${this.bucket}/${key}`, {
       method: "POST",
       headers: this.headers({ "Content-Type": contentType, "x-upsert": "true", "Cache-Control": "public, max-age=31536000" }),
       body: Buffer.from(bytes),
     });
     if (!res.ok) throw new Error(`Supabase upload ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    return `${this.cfg.url}/storage/v1/object/public/${this.bucket}/${key}`;
+    return `${this.base}/storage/v1/object/public/${this.bucket}/${key}`;
   }
 }
 

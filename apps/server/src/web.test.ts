@@ -173,6 +173,14 @@ describe("supabase storage", () => {
     expect(calls.every((c) => !c.headers.Authorization)).toBe(true);
   });
 
+  it("ignores a path on SUPABASE_URL (the dashboard shows …/rest/v1/)", async () => {
+    const calls: string[] = [];
+    const fetchFn = (async (url: string) => (calls.push(url), new Response("{}"))) as unknown as typeof fetch;
+    const url = await new SupabaseMediaStore({ url: "https://x.supabase.co/rest/v1/", serviceRoleKey: "sb_secret_abc", fetch: fetchFn }).put("f.png", new Uint8Array(PNG), "image/png");
+    expect(calls).toEqual(["https://x.supabase.co/storage/v1/bucket", "https://x.supabase.co/storage/v1/object/media/f.png"]);
+    expect(url).toBe("https://x.supabase.co/storage/v1/object/public/media/f.png");
+  });
+
   it("also sends a legacy service_role JWT as a Bearer token", async () => {
     const { calls } = await capture("eyJhbGciOi.legacy");
     expect(calls[1].headers.Authorization).toBe("Bearer eyJhbGciOi.legacy");

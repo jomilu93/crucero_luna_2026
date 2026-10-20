@@ -95,7 +95,7 @@ const client = new Anthropic();
 let media: MediaStore;
 let diskMedia: DiskMediaStore | undefined;
 if (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
-  media = new SupabaseMediaStore({ url: env.SUPABASE_URL.replace(/\/$/, ""), serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY, bucket: env.SUPABASE_BUCKET || undefined });
+  media = new SupabaseMediaStore({ url: env.SUPABASE_URL, serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY, bucket: env.SUPABASE_BUCKET || undefined });
   log("media: supabase storage");
 } else {
   diskMedia = new DiskMediaStore(env.MEDIA_DIR || join(dirname(env.CRUCERO_DATA_FILE || ".data/crucero.json"), "media"), publicUrl);
