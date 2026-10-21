@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { createRouter } from "./http.js";
 import { phoneBridgePage, tvBridge } from "./bridge.js";
-import { VoiceService, sentences, speakable, stillThere } from "./voice.js";
+import { GREET_CUE, VoiceService, greetingFor, sentences, speakable, stillThere } from "./voice.js";
 import { tvKey } from "./web.js";
 
 const SECRET = "voice-secret";
@@ -116,7 +116,8 @@ describe("a call", () => {
     expect(el).toMatchObject({ signedUrl: "wss://eleven/signed", agentId: "agent_1" });
     expect(el.customLlmExtraBody).toBeUndefined(); // needs an override permission the agent may lack (1008)
     expect(el.dynamicVariables.cl_session).toBe(el.userId);
-    expect(el.conversationConfigOverride.agent).toMatchObject({ language: "en", first_message: expect.stringMatching(/^Yiá sas, Diego! Capitán Lunáticus here, on the Bridge of the Moonshine of the Seas/) });
+    // No first message: the call page cues the greeting once the avatar plays (ElevenLabs's started before any audio).
+    expect(el.conversationConfigOverride.agent).toEqual({ language: "en", first_message: "" });
     expect((await voice.personFromSession(el.userId))?.id).toBe("diego");
     expect(await voice.personFromSession(el.userId.replace(/.$/, "x"))).toBeUndefined();
     await store.setSetting("paused", true);
@@ -295,7 +296,7 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
   it("starts a TV-mic call as the shared Bridge seat", async () => {
     const res = await fetch(`${base}/tv/${tvKey(SECRET)}/call`, { method: "POST" });
     expect(await res.json()).toEqual({ sessionToken: "anam_session" });
-    expect(ctx.calls.at(-1)!.body.environment.elevenLabsAgentSettings.conversationConfigOverride.agent.first_message).toMatch(/^¡Yiá sas! Aquí el Capitán Lunáticus desde el Puente del Moonshine of the Seas/);
+    expect(ctx.calls.at(-1)!.body.environment.elevenLabsAgentSettings.conversationConfigOverride.agent.first_message).toBe("");
     expect(ctx.calls.at(-1)!.body.sessionOptions).toEqual({ videoWidth: 1152, videoHeight: 768, videoQuality: "high" }); // TV: landscape
     const page = await (await fetch(`${base}/tv/${tvKey(SECRET)}`)).text();
     expect(page).toContain("Hablar con el Capitán");
@@ -488,5 +489,34 @@ describe("call pages", () => {
     const tv = tvBridge({ key: "k" });
     expect(tv.indexOf("ownMic = await navigator.mediaDevices.getUserMedia")).toBeLessThan(tv.indexOf('"/call", { method: "POST" }'));
     expect(tv).toContain('begin(j.sessionToken, "El Puente", ownMic)');
+  });
+});
+
+describe("the greeting", () => {
+  it("waits for the call page's cue, then greets by name without Claude; falls back when no cue arrives", async () => {
+    const { voice, store, heard } = setup();
+    const diego = (await store.getPerson("diego"))!;
+    const say = async (messages: unknown[]) => {
+      let raw = "";
+      const res = { on: () => res, destroyed: false, writableFinished: false, writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
+      await voice.completions({ headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never, res, JSON.stringify({ messages, user_id: voice.sessionFor(diego) }));
+      return raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "").join("");
+    };
+    const hello = greetingFor(diego);
+    expect(hello).toMatch(/^Yiá sas, Diego! Capitán Lunáticus here, on the Bridge of the Moonshine of the Seas/);
+    expect(await say([{ role: "system", content: "x" }, { role: "user", content: GREET_CUE }])).toBe(hello);
+    expect(await say([{ role: "system", content: "x" }])).toBe(hello); // the cue never came; ElevenLabs's timeout asked
+    // After the greeting, silence is a check-in, not another greeting.
+    expect(await say([{ role: "user", content: GREET_CUE }, { role: "assistant", content: hello }])).toBe("Are you still there, Diego?");
+    expect(heard).toEqual([]);
+    expect(await store.getConversation("diego")).toBeUndefined();
+    expect(greetingFor({ name: "Puente (TV)", language: "es", phoneE164: "tv:bridge" })).toMatch(/^¡Yiá sas! Aquí el Capitán Lunáticus/);
+  });
+
+  it("is cued by both call pages once the avatar is playing", () => {
+    const phone = phoneBridgePage({ lang: "es", base: "/c/x", name: "Sofía", ready: true });
+    expect(phone).toContain(`c.sendUserMessage(${JSON.stringify(GREET_CUE)})`);
+    expect(phone).toMatch(/VIDEO_PLAY_STARTED", \(\) => \{ say\(""\); greet\(c\); \}/);
+    expect(tvBridge({ key: "k" })).toContain(`c.sendUserMessage(${JSON.stringify(GREET_CUE)})`);
   });
 });
