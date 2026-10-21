@@ -23,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (144 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (143 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -88,10 +88,11 @@ call pages' safety timer (was 10 min). Calls otherwise end when the caller hangs
 Greeting cut off at call start (pilot): the Anam SDK opened the mic after the session started and phones switch
 audio mode when the mic turns on, swallowing the first seconds; the call pages now open the mic on the tap and pass
 it to `streamToVideoElement`, and prime the video element to play sound.
-Then the greeting started before the avatar's stream reached the phone: the agent now has no first message (agent and
-per-call override both `""`); the call page sends `GREET_CUE` via `sendUserMessage` 400 ms after `VIDEO_PLAY_STARTED`,
-and the custom LLM answers it with `greetingFor()` (no Claude, not saved). If the cue never reaches ElevenLabs, its
-turn timeout asks with nothing said yet and gets the greeting too. Needs "Volver a configurar".
+Then the greeting started before the avatar's stream reached the phone. Tried: no first message + a cue from the page
+via `sendUserMessage` → silence until the caller spoke (Anam doesn't forward it to ElevenLabs, and the turn timeout
+doesn't fire before anyone has spoken). Now: the first message (agent and per-call override) opens with
+`GREETING_PAUSE` (`<break time="2.5s" />`, Flash v2.5 honours SSML breaks up to 3 s) before `greetingFor()`.
+Needs "Volver a configurar".
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;

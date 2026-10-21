@@ -117,11 +117,11 @@ export function stillThere(person: Pick<Person, "name" | "nickname" | "language"
 }
 
 /**
- * The call page sends this as a user message once the avatar is really playing on the screen; the Capitán's
- * greeting answers it. ElevenLabs's own first message started before the phone had any audio, so the passenger
- * never heard their name.
+ * ElevenLabs speaks the first message as soon as Anam connects, a couple of seconds before the avatar's audio reaches
+ * the phone, so the greeting opens with a silent pause (an SSML break, which Flash v2.5 honours, at most 3 s).
+ * Cueing the greeting from the page instead didn't work: Anam doesn't forward sendUserMessage to ElevenLabs.
  */
-export const GREET_CUE = "[[cl:greet]]";
+export const GREETING_PAUSE = '<break time="2.5s" /> ';
 
 /** The Capitán's hello at the start of a call, with the passenger's name (none on the shared TV). */
 export function greetingFor(person: Pick<Person, "name" | "nickname" | "language" | "phoneE164">): string {
@@ -261,8 +261,8 @@ export class VoiceService {
       name: CAPTAIN_NAME,
       conversation_config: {
         agent: {
-          // Empty: the agent waits, and the call page cues the greeting once the avatar is on screen (GREET_CUE).
-          first_message: "",
+          // Each call overrides this with the passenger's name; both start with a pause for the avatar to arrive.
+          first_message: `${GREETING_PAUSE}¡Yiá sas! Aquí el ${CAPTAIN_NAME} desde el Puente del ${SHIP_NAME}. ¿En qué te ayudo?`,
           dynamic_variables: { dynamic_variable_placeholders: { cl_session: "none" } },
           language: "es",
           prompt: {
@@ -364,9 +364,7 @@ export class VoiceService {
             // as user_id; unlike custom_llm_extra_body it needs no override permission on the agent.
             userId: session,
             dynamicVariables: { cl_session: session },
-            // No first message: ElevenLabs would speak it before the phone plays any audio. The call page cues the
-            // greeting (GREET_CUE) once the avatar is on screen; the custom LLM answers with greetingFor().
-            conversationConfigOverride: { agent: { first_message: "", language: person.language } },
+            conversationConfigOverride: { agent: { first_message: GREETING_PAUSE + greetingFor(person), language: person.language } },
           },
         },
       }),
@@ -528,14 +526,10 @@ export class VoiceService {
     const en = lang === "en";
     if (person) this.note(`custom LLM hit for ${person.name}: ${turns.length} messages${silent ? " (caller silent)" : `, heard "${text.slice(0, 40)}"`}`);
 
-    // The greeting: cued by the call page once the avatar plays, or (if that cue never arrives) asked for by
-    // ElevenLabs's turn timeout before anyone has said anything.
-    const capitanSpoke = turns.some((m) => m.role === "assistant" && said(m).trim());
-    const cued = text.trim() === GREET_CUE && afterUser.length === 0;
-    const realWords = turns.some((m) => m.role === "user" && said(m).trim() && said(m).trim() !== GREET_CUE);
-    if (person && (cued || (!capitanSpoke && !realWords))) {
-      this.note(`${person.name}: greeting (${cued ? "cued by the call page" : "no cue; ElevenLabs asked"})`);
-      return finish(capitanSpoke ? (en ? "I'm here!" : "¡Aquí estoy!") : greetingFor(person));
+    // Asked to speak before anyone has said anything (an agent without a first message): that's the greeting.
+    if (person && !turns.some((m) => said(m).trim())) {
+      this.note(`${person.name}: greeting from the custom LLM (the agent had no first message)`);
+      return finish(greetingFor(person));
     }
 
     if (silent && person) {
