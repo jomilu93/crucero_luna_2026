@@ -418,6 +418,7 @@ export class VoiceService {
     try {
       body = JSON.parse(rawBody);
     } catch {
+      this.note(`custom LLM sent a body that is not JSON (${rawBody.length} bytes)`);
       res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: { message: "bad json" } }));
       return;
     }
@@ -456,6 +457,7 @@ export class VoiceService {
 
     const started = Date.now();
     const en = person?.language === "en";
+    if (person) this.note(`custom LLM hit for ${person.name}: ${turns.length} messages${silent ? " (caller silent)" : `, heard "${text.slice(0, 40)}"`}`);
     if (silent && person) {
       const line = stillThere(person, Math.max(1, trailingCapitan));
       this.note(`${person.name} is quiet; check-in ${Math.max(1, trailingCapitan)}`);

@@ -216,6 +216,20 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
     expect((await ctx.store.getConversation("sofia"))?.history.length).toBeGreaterThan(0); // shared with the chat
   });
 
+  it("answers at any path ending in /chat/completions and notes POSTs nobody answers", async () => {
+    const sofia = (await ctx.store.getPerson("sofia"))!;
+    const body = JSON.stringify({ stream: true, messages: [{ role: "user", content: "hola" }], user_id: ctx.voice.sessionFor(sofia) });
+    const headers = { Authorization: `Bearer ${ctx.voice.llmSecret()}`, "Content-Type": "application/json" };
+    const doubled = await fetch(`${base}/v1/chat/completions/chat/completions`, { method: "POST", headers, body });
+    expect(doubled.status).toBe(200);
+    expect(await doubled.text()).toContain("data: [DONE]");
+    expect((await fetch(`${base}/v1/responses`, { method: "POST", headers, body })).status).toBe(404);
+    const diag = (await ctx.voice.diagnose()).join("\n");
+    expect(diag).toMatch(/custom LLM called at \/v1\/chat\/completions\/chat\/completions/);
+    expect(diag).toMatch(/custom LLM hit for Sofía Luna: 1 messages, heard "hola"/);
+    expect(diag).toMatch(/POST \/v1\/responses → 404/);
+  });
+
   it("finds the passenger from the prompt's session variable when user_id is missing, and notes unknown callers", async () => {
     const diego = (await ctx.store.getPerson("diego"))!;
     const ask = (system: string) =>
