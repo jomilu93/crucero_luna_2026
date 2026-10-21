@@ -100,7 +100,10 @@ export function createRouter(deps: RouterDeps) {
         if (tv[1] !== deps.tv.key) return send(res, 404, "not found");
         return serveTv(deps.tv, res, tv[2] ?? "", req.method, req.method === "POST" ? await readBody(req, 8 * 1024) : "");
       }
-      if (req.method === "POST" && url.pathname === "/v1/chat/completions" && deps.voice) {
+      // ElevenLabs may treat the agent's server URL as an OpenAI base URL and append /chat/completions to it,
+      // so any path ending in /chat/completions is the Capitán.
+      if (req.method === "POST" && /\/chat\/completions\/?$/.test(url.pathname) && deps.voice) {
+        if (url.pathname !== "/v1/chat/completions") deps.voice.note(`custom LLM called at ${url.pathname}`);
         return deps.voice.completions(req, res, await readBody(req, 2 * 1024 * 1024));
       }
       if (req.method === "GET" && url.pathname.startsWith("/media/") && deps.diskMedia) {
@@ -229,9 +232,12 @@ ${bot ? `<p><a href="https://t.me/${bot}">Habla con el Capitán Lunáticus en Te
         return send(res, 200, ics, "text/calendar; charset=utf-8");
       }
 
+      // A POST nobody answers is most likely a vendor calling the wrong path: show it in Diagnosticar.
+      if (req.method === "POST" && deps.voice) deps.voice.note(`POST ${url.pathname.slice(0, 80)} → 404`);
       send(res, 404, "not found");
     } catch (err) {
       log(`http ${req.method} ${url.pathname} ERROR ${err instanceof Error ? err.message : err}`);
+      if (/completions/.test(url.pathname)) deps.voice?.note(`custom LLM ERROR before answering: ${err instanceof Error ? err.message : err}`);
       if (!res.headersSent) send(res, 500, "error");
     }
   };
