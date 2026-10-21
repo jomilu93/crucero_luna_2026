@@ -80,6 +80,7 @@ describe("setup from the Admin tab", () => {
     expect(agent.conversation_config.agent.prompt.prompt).toContain("[session:{{cl_session}}]");
     expect(agent.conversation_config.agent.dynamic_variables.dynamic_variable_placeholders).toEqual({ cl_session: "none" });
     expect(agent.conversation_config.turn).toMatchObject({ turn_timeout: 8, silence_end_call_timeout: 45 });
+    expect(agent.conversation_config.conversation).toEqual({ max_duration_seconds: 3600 }); // not ElevenLabs's 10 min
     expect(await store.getSetting("voice_agent_id")).toBe("agent_1");
     await voice.setVoice("VoiceIdEspanol123");
     expect(calls.at(-1)).toMatchObject({ url: "https://api.elevenlabs.io/v1/convai/agents/agent_1", method: "PATCH" });
@@ -108,7 +109,7 @@ describe("a call", () => {
     expect(await voice.startCall(diego)).toEqual({ sessionToken: "anam_session" });
     const anam = calls.at(-1)!;
     expect(anam.url).toBe("https://api.anam.ai/v1/auth/session-token");
-    expect(anam.body.personaConfig).toMatchObject({ avatarId: "avatar_1" });
+    expect(anam.body.personaConfig).toMatchObject({ avatarId: "avatar_1", maxSessionLengthSeconds: 3600 }); // the caller hangs up, not a timer
     expect(anam.body.sessionOptions).toEqual({ videoWidth: 768, videoHeight: 1152, videoQuality: "high" }); // phone: portrait
     const el = anam.body.environment.elevenLabsAgentSettings;
     expect(el).toMatchObject({ signedUrl: "wss://eleven/signed", agentId: "agent_1" });

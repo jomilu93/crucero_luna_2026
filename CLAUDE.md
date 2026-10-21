@@ -82,6 +82,9 @@ checking): a filler is spoken only when a tool starts (`onToolStart`) or after 3
 (`FILLERS`). A re-engage request that arrives while a turn is still in flight joins it (`inflight`) and speaks its
 answer; a filler is never counted as the caller going quiet. The custom LLM answers at any `/chat/completions` path
 (ElevenLabs appends it to the agent URL) and Diagnosticar logs every hit.
+Call length: `MAX_CALL_SECONDS` (1 h) on the ElevenLabs agent (`conversation.max_duration_seconds`, default 10 min,
+needs "Volver a configurar"), the Anam session (`maxSessionLengthSeconds`; Anam's plan cap still applies) and the
+call pages' safety timer (was 10 min). Calls otherwise end when the caller hangs up or after 45 s of silence.
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;

@@ -25,6 +25,12 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { ImageGenerator } from "./flyer.js";
 import type { MediaStore } from "./media.js";
 
+/**
+ * The longest call: an hour, so the caller decides when it ends (silence still ends it after 45 s). Applied to the
+ * ElevenLabs agent (default 10 min), the Anam session (capped by Anam's plan) and the call pages' own safety timer.
+ */
+export const MAX_CALL_SECONDS = 60 * 60;
+
 export interface VoiceConfig {
   elevenLabsKey?: string;
   anamKey?: string;
@@ -255,6 +261,8 @@ export class VoiceService {
         // Natural turn-taking: after 8 s of caller silence ElevenLabs asks us for a check-in ("¿Sigues ahí?"), and
         // after 45 s of silence it hangs up politely. Barge-in interruptions are on by default.
         turn: { turn_timeout: 8, silence_end_call_timeout: 45, turn_eagerness: "normal" },
+        // ElevenLabs ends every conversation at 10 minutes unless told otherwise; the caller decides instead.
+        conversation: { max_duration_seconds: MAX_CALL_SECONDS },
       },
       platform_settings: {
         // Each call names its passenger in custom_llm_extra_body; ElevenLabs refuses it (1008) unless allowed here.
@@ -326,7 +334,14 @@ export class VoiceService {
       method: "POST",
       headers: { Authorization: `Bearer ${this.deps.cfg.anamKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        personaConfig: { avatarId: st.avatarId, avatarModel: "cara-4", directorNotes: { presetStyle: "warm", expressivity: 0.6 } },
+        personaConfig: {
+          avatarId: st.avatarId,
+          avatarModel: "cara-4",
+          directorNotes: { presetStyle: "warm", expressivity: 0.6 },
+          // The call lasts until the caller hangs up (or goes quiet; ElevenLabs ends silent calls). Anam's plan cap
+          // still applies on top of this.
+          maxSessionLengthSeconds: MAX_CALL_SECONDS,
+        },
         // Cara 4's largest frames, portrait for phones and landscape for the TV, starting on the high bitrate
         // profile instead of ramping up from a blurry one.
         sessionOptions: { ...(screen === "tv" ? { videoWidth: 1152, videoHeight: 768 } : { videoWidth: 768, videoHeight: 1152 }), videoQuality: "high" },
@@ -405,7 +420,8 @@ export class VoiceService {
         out.push(`agent overrides: extra body ${ov.custom_llm_extra_body ? "✓" : "✗"} · first message ${ov.conversation_config_override?.agent?.first_message ? "✓" : "✗"} · language ${ov.conversation_config_override?.agent?.language ? "✓" : "✗"}`);
         const turn = agent?.conversation_config?.turn ?? {};
         const events: string[] = agent?.conversation_config?.conversation?.client_events ?? [];
-        out.push(`agent turns: check-in after ${turn.turn_timeout ?? "?"} s · hang up after ${turn.silence_end_call_timeout ?? "?"} s silent · eagerness ${turn.turn_eagerness ?? "?"} · interruptions ${events.length ? (events.includes("interruption") ? "✓" : "✗ (turn on the interruption client event)") : "default"}`);
+        const maxCall = agent?.conversation_config?.conversation?.max_duration_seconds;
+        out.push(`agent turns: check-in after ${turn.turn_timeout ?? "?"} s · hang up after ${turn.silence_end_call_timeout ?? "?"} s silent · longest call ${maxCall ? `${Math.round(maxCall / 60)} min` : "10 min (default)"}${maxCall && maxCall >= MAX_CALL_SECONDS ? " ✓" : " ✗ (click Volver a configurar)"} · eagerness ${turn.turn_eagerness ?? "?"} · interruptions ${events.length ? (events.includes("interruption") ? "✓" : "✗ (turn on the interruption client event)") : "default"}`);
         out.push(`agent voice: ${agent?.conversation_config?.tts?.voice_id ?? "?"} · tts ${agent?.conversation_config?.tts?.model_id ?? "?"} · language ${agent?.conversation_config?.agent?.language ?? "?"}`);
         const list = (await this.eleven(`/v1/convai/conversations?agent_id=${encodeURIComponent(st.agentId)}&page_size=3`)) as any;
         for (const c of (list?.conversations ?? []).slice(0, 3)) {
