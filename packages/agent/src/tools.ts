@@ -43,6 +43,8 @@ export interface ToolContext {
   cabinLink?: (person: Person) => string;
   /** Observability + evals: every executed tool call is reported here. */
   onToolCall?: (rec: ToolCallRecord) => void;
+  /** Fired as a tool begins (a voice call says a filler line while the Capitán looks something up). */
+  onToolStart?: (name: string) => void;
 }
 
 const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("Ship-local calendar date, YYYY-MM-DD");
@@ -116,6 +118,7 @@ export function buildTools(ctx: ToolContext) {
   const lang = passenger.language;
   const wrap = <I, R>(name: string, fn: (input: I) => Promise<R>) => async (input: I): Promise<string> => {
     try {
+      ctx.onToolStart?.(name);
       const out = await fn(input);
       const text = typeof out === "string" ? out : json(out);
       ctx.onToolCall?.({ name, input, output: text });

@@ -4,11 +4,12 @@
  * 16-bit PCM over a WebSocket and the TV feeds it to the avatar as its microphone.
  */
 import { SHIP_NAME } from "@crucero/agent";
+import { MAX_CALL_SECONDS } from "./voice.js";
 import { esc } from "./web.js";
 
 export const ANAM_SDK = "https://cdn.jsdelivr.net/npm/@anam-ai/js-sdk@4.27.1/+esm";
-/** Calls hang up on their own after this long, so a forgotten call never runs all night. */
-export const MAX_CALL_MS = 10 * 60 * 1000;
+/** A safety net only, a minute after the vendors' own limit: calls end when the caller hangs up or goes quiet. */
+export const MAX_CALL_MS = (MAX_CALL_SECONDS + 60) * 1000;
 
 /** Shared browser helpers: the mic capture and playback worklets, PCM conversion, and the WebSocket URL. */
 const AUDIO_JS = `

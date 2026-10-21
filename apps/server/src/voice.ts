@@ -25,6 +25,12 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { ImageGenerator } from "./flyer.js";
 import type { MediaStore } from "./media.js";
 
+/**
+ * The longest call: an hour, so the caller decides when it ends (silence still ends it after 45 s). Applied to the
+ * ElevenLabs agent (default 10 min), the Anam session (capped by Anam's plan) and the call pages' own safety timer.
+ */
+export const MAX_CALL_SECONDS = 60 * 60;
+
 export interface VoiceConfig {
   elevenLabsKey?: string;
   anamKey?: string;
@@ -110,10 +116,28 @@ export function stillThere(person: Pick<Person, "name" | "nickname" | "language"
   return lines[Math.min(nth, lines.length) - 1];
 }
 
+/** Filler lines for a slow turn, rotated so the Capitán doesn't repeat himself. The trailing "... " keeps the answer from running into them. */
+export const FILLERS = {
+  es: ["Déjame revisar... ", "A ver, un segundo... ", "Mmm, déjame ver... ", "Ahorita te digo... "],
+  en: ["Let me check... ", "One second... ", "Hmm, let me see... ", "Just a moment... "],
+};
+const HOLD = { es: "Ya casi lo tengo... ", en: "Almost there... " };
+
+/** True when a line the Capitán said was only a filler (he was still working, not waiting on the caller). */
+export function isFiller(line: string): boolean {
+  const t = line.trim().toLowerCase();
+  return !!t && [...FILLERS.es, ...FILLERS.en, HOLD.es, HOLD.en].some((f) => f.trim().toLowerCase() === t);
+}
+
 /** Splits speech into sentence-sized chunks so the voice can start before the whole reply is streamed. */
 export function sentences(text: string): string[] {
   return text.match(/[^.!?\n]*[.!?\n]+["')\]]*\s*|[^.!?\n]+$/g)?.filter((s) => s.trim()) ?? [text];
 }
+
+/** One open request from ElevenLabs waiting to speak. */
+type Waiter = { cancelled: boolean; speak: (reply: string) => void };
+/** A Capitán turn in progress: the requests that can speak it, and its reply once ready. */
+type Turn = { waiters: Waiter[]; reply?: string };
 
 export class VoiceService {
   private readonly fetchFn: typeof fetch;
@@ -124,6 +148,9 @@ export class VoiceService {
   private wss?: WebSocketServer;
   /** Recent call events (browser close reasons, custom LLM hits) for the Admin tab's diagnostics. */
   private readonly events: string[] = [];
+  /** Turns still being worked on (or answered but not yet heard), per passenger: a check-in request joins them. */
+  private readonly inflight = new Map<string, Turn>();
+  private readonly lastFiller = new Map<string, number>();
 
   constructor(private readonly deps: VoiceDeps) {
     this.fetchFn = deps.fetch ?? fetch;
@@ -234,6 +261,8 @@ export class VoiceService {
         // Natural turn-taking: after 8 s of caller silence ElevenLabs asks us for a check-in ("¿Sigues ahí?"), and
         // after 45 s of silence it hangs up politely. Barge-in interruptions are on by default.
         turn: { turn_timeout: 8, silence_end_call_timeout: 45, turn_eagerness: "normal" },
+        // ElevenLabs ends every conversation at 10 minutes unless told otherwise; the caller decides instead.
+        conversation: { max_duration_seconds: MAX_CALL_SECONDS },
       },
       platform_settings: {
         // Each call names its passenger in custom_llm_extra_body; ElevenLabs refuses it (1008) unless allowed here.
@@ -305,7 +334,14 @@ export class VoiceService {
       method: "POST",
       headers: { Authorization: `Bearer ${this.deps.cfg.anamKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        personaConfig: { avatarId: st.avatarId, avatarModel: "cara-4", directorNotes: { presetStyle: "warm", expressivity: 0.6 } },
+        personaConfig: {
+          avatarId: st.avatarId,
+          avatarModel: "cara-4",
+          directorNotes: { presetStyle: "warm", expressivity: 0.6 },
+          // The call lasts until the caller hangs up (or goes quiet; ElevenLabs ends silent calls). Anam's plan cap
+          // still applies on top of this.
+          maxSessionLengthSeconds: MAX_CALL_SECONDS,
+        },
         // Cara 4's largest frames, portrait for phones and landscape for the TV, starting on the high bitrate
         // profile instead of ramping up from a blurry one.
         sessionOptions: { ...(screen === "tv" ? { videoWidth: 1152, videoHeight: 768 } : { videoWidth: 768, videoHeight: 1152 }), videoQuality: "high" },
@@ -384,7 +420,8 @@ export class VoiceService {
         out.push(`agent overrides: extra body ${ov.custom_llm_extra_body ? "✓" : "✗"} · first message ${ov.conversation_config_override?.agent?.first_message ? "✓" : "✗"} · language ${ov.conversation_config_override?.agent?.language ? "✓" : "✗"}`);
         const turn = agent?.conversation_config?.turn ?? {};
         const events: string[] = agent?.conversation_config?.conversation?.client_events ?? [];
-        out.push(`agent turns: check-in after ${turn.turn_timeout ?? "?"} s · hang up after ${turn.silence_end_call_timeout ?? "?"} s silent · eagerness ${turn.turn_eagerness ?? "?"} · interruptions ${events.length ? (events.includes("interruption") ? "✓" : "✗ (turn on the interruption client event)") : "default"}`);
+        const maxCall = agent?.conversation_config?.conversation?.max_duration_seconds;
+        out.push(`agent turns: check-in after ${turn.turn_timeout ?? "?"} s · hang up after ${turn.silence_end_call_timeout ?? "?"} s silent · longest call ${maxCall ? `${Math.round(maxCall / 60)} min` : "10 min (default)"}${maxCall && maxCall >= MAX_CALL_SECONDS ? " ✓" : " ✗ (click Volver a configurar)"} · eagerness ${turn.turn_eagerness ?? "?"} · interruptions ${events.length ? (events.includes("interruption") ? "✓" : "✗ (turn on the interruption client event)") : "default"}`);
         out.push(`agent voice: ${agent?.conversation_config?.tts?.voice_id ?? "?"} · tts ${agent?.conversation_config?.tts?.model_id ?? "?"} · language ${agent?.conversation_config?.agent?.language ?? "?"}`);
         const list = (await this.eleven(`/v1/convai/conversations?agent_id=${encodeURIComponent(st.agentId)}&page_size=3`)) as any;
         for (const c of (list?.conversations ?? []).slice(0, 3)) {
@@ -434,59 +471,116 @@ export class VoiceService {
     const turns = (body.messages ?? []).filter((m) => m.role !== "system");
     const lastUser = [...turns].reverse().find((m) => m.role === "user");
     const text = said(lastUser);
-    // ElevenLabs re-engages a silent caller (turn_timeout) by asking for a reply with no new words from them:
-    // the conversation ends on our own turn. That is a check-in, never a reason to answer the last question again.
-    const trailingCapitan = turns.length - 1 - turns.map((m) => m.role).lastIndexOf("user");
-    const silent = turns.length > 0 && (trailingCapitan > 0 || !said(turns[turns.length - 1]).trim());
+    // ElevenLabs re-engages a silent caller (turn_timeout) by asking for a reply with no new words from them: the
+    // conversation ends on our own turn. A filler line ("Déjame revisar...") is the Capitán still working, never
+    // the caller going quiet, and so are lines before the caller's last words.
+    const afterUser = turns.slice(turns.map((m) => m.role).lastIndexOf("user") + 1);
+    const silent = turns.length > 0 && (afterUser.length > 0 || !said(turns[turns.length - 1]).trim());
+    const checkIns = afterUser.filter((m) => !isFiller(said(m))).length;
+    const lastWasFiller = afterUser.length > 0 && isFiller(said(afterUser[afterUser.length - 1]));
 
     const id = `chatcmpl-${randomBytes(6).toString("hex")}`;
     const created = Math.floor(Date.now() / 1000);
     const chunk = (delta: Record<string, string>, finish: string | null = null) =>
       `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: "capitan-lunatico", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
-    // ElevenLabs cancels this request when the caller keeps talking; writing into the dead connection is a no-op.
-    let cancelled = false;
+    // ElevenLabs cancels this request when the caller keeps talking (or re-engages); writing into a dead connection is a no-op.
+    let dropped = false;
     res.on("close", () => {
-      if (!res.writableFinished) cancelled = true;
+      if (!res.writableFinished) dropped = true;
     });
-    res.on("error", () => (cancelled = true));
-    const send = (s: string) => {
-      if (!cancelled && !res.destroyed) res.write(s);
+    res.on("error", () => (dropped = true));
+    const me: Waiter = {
+      get cancelled() {
+        return dropped || (res.destroyed && !res.writableFinished);
+      },
+      speak: () => {},
     };
+    let ended = false;
+    const send = (s: string) => {
+      if (!ended && !me.cancelled && !res.destroyed) res.write(s);
+    };
+    const finish = (reply: string) => {
+      if (ended) return;
+      for (const s of sentences(reply)) send(chunk({ content: s }));
+      send(chunk({}, "stop"));
+      if (!me.cancelled && !res.destroyed) res.end("data: [DONE]\n\n");
+      ended = true;
+    };
+    me.speak = finish;
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     send(chunk({ role: "assistant", content: "" }));
 
     const started = Date.now();
-    const en = person?.language === "en";
+    const lang = person?.language === "en" ? "en" : "es";
+    const en = lang === "en";
     if (person) this.note(`custom LLM hit for ${person.name}: ${turns.length} messages${silent ? " (caller silent)" : `, heard "${text.slice(0, 40)}"`}`);
+
     if (silent && person) {
-      const line = stillThere(person, Math.max(1, trailingCapitan));
-      this.note(`${person.name} is quiet; check-in ${Math.max(1, trailingCapitan)}`);
-      for (const s of sentences(line)) send(chunk({ content: s }));
-      send(chunk({}, "stop"));
-      if (!cancelled && !res.destroyed) res.end("data: [DONE]\n\n");
-      return;
+      // Still working on the caller's last question (or answered while ElevenLabs wasn't listening): answer it now.
+      const pending = this.inflight.get(person.id);
+      if (pending) {
+        this.note(`${person.name}: re-engaged while the Capitán was still on it; answering that`);
+        if (pending.reply !== undefined) return this.deliver(person.id, pending, me);
+        pending.waiters.push(me);
+        const hold = setTimeout(() => send(chunk({ content: HOLD[lang] })), 2500);
+        res.on("close", () => clearTimeout(hold));
+        return;
+      }
+      if (lastWasFiller) {
+        // We lost the turn he was working on (a restart, a dropped request): ask again instead of "are you there?".
+        this.note(`${person.name}: the turn behind the last filler is gone; asking to repeat`);
+        return finish(en ? "Sorry, the line crackled. Could you say that again?" : "Perdón, se cortó la señal un segundo. ¿Me lo repites?");
+      }
+      const nth = Math.max(1, checkIns);
+      this.note(`${person.name} is quiet; check-in ${nth}`);
+      return finish(stillThere(person, nth));
     }
-    // A turn with tool calls can take several seconds; ElevenLabs gives up on a custom LLM that stays silent, so a
-    // slow turn first speaks a buffer phrase. Their docs: end it with "... " so the real answer doesn't run into it.
-    const buffer = setTimeout(() => send(chunk({ content: en ? "Let me check... " : "Déjame revisar... " })), this.deps.bufferAfterMs ?? 1200);
-    let reply: string;
+
+    if (!person) return finish("Perdón, se cortó la señal del Puente. Vuelve a llamar desde tu página, por favor.");
+    if (!text.trim()) return finish(en ? "I'm listening." : "Te escucho.");
+
+    // A slow turn speaks one filler line: as soon as the Capitán starts looking something up, or after a few
+    // seconds of thinking. Quick answers get none. ElevenLabs gives up on a custom LLM that stays silent too long.
+    let filled = false;
+    const fill = () => {
+      if (filled) return;
+      filled = true;
+      const n = ((this.lastFiller.get(person.id) ?? -1) + 1) % FILLERS[lang].length;
+      this.lastFiller.set(person.id, n);
+      send(chunk({ content: FILLERS[lang][n] }));
+    };
+    const buffer = setTimeout(fill, this.deps.bufferAfterMs ?? 3500);
+    const turn: Turn = { waiters: [me] };
+    this.inflight.set(person.id, turn);
     try {
-      if (!person) reply = "Perdón, se cortó la señal del Puente. Vuelve a llamar desde tu página, por favor.";
-      else if (!text.trim()) reply = en ? "I'm listening." : "Te escucho.";
-      else reply = speakable(await this.deps.chat.converse(person, text, "voice", { keep: () => !cancelled })) || (en ? "Aye aye!" : "¡A la orden!");
+      turn.reply =
+        speakable(
+          await this.deps.chat.converse(person, text, "voice", {
+            // Kept in the shared history if anyone is still listening for it, or if it already did something.
+            keep: () => turn.waiters.some((w) => !w.cancelled),
+            onToolStart: () => fill(),
+          }),
+        ) || (en ? "Aye aye!" : "¡A la orden!");
       const secs = ((Date.now() - started) / 1000).toFixed(1);
-      if (person && cancelled) this.note(`${person.name} kept talking; turn cancelled by ElevenLabs after ${secs} s (not saved): ${text.slice(0, 50)}`);
-      else if (person) this.note(`${person.name} (${secs} s): ${text.slice(0, 50)} → ${reply.slice(0, 70)}`);
+      if (turn.waiters.every((w) => w.cancelled)) this.note(`${person.name} kept talking; turn cancelled by ElevenLabs after ${secs} s (not saved): ${text.slice(0, 50)}`);
+      else this.note(`${person.name} (${secs} s): ${text.slice(0, 50)} → ${turn.reply.slice(0, 70)}`);
     } catch (err) {
       this.note(`custom LLM ERROR after ${((Date.now() - started) / 1000).toFixed(1)} s: ${err instanceof Error ? err.message : err}`);
-      reply = en ? "Rough seas on the line, give me a moment and ask again." : "Hay oleaje en la línea; dame un momento y vuelve a preguntar.";
+      turn.reply = en ? "Rough seas on the line, give me a moment and ask again." : "Hay oleaje en la línea; dame un momento y vuelve a preguntar.";
     } finally {
       clearTimeout(buffer);
     }
-    if (cancelled || res.destroyed) return;
-    for (const s of sentences(reply)) send(chunk({ content: s }));
-    send(chunk({}, "stop"));
-    res.end("data: [DONE]\n\n");
+    const alive = [...turn.waiters].reverse().find((w) => !w.cancelled);
+    if (alive) return this.deliver(person.id, turn, alive);
+    // Nobody was listening (ElevenLabs re-engages after its timeout): keep the answer briefly for that request.
+    setTimeout(() => this.inflight.get(person.id) === turn && this.inflight.delete(person.id), 60_000).unref?.();
+  }
+
+  /** Speaks a finished turn on one live request, once; the turn is then done. */
+  private deliver(personId: string, turn: Turn, to: Waiter): void {
+    if (this.inflight.get(personId) === turn) this.inflight.delete(personId);
+    for (const w of turn.waiters) if (w !== to && !w.cancelled) w.speak("");
+    to.speak(turn.reply ?? "");
   }
 
   // ---------- phone → TV mic relay ----------

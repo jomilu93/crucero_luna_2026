@@ -62,7 +62,7 @@ export class Director {
     return `<ship_context>\n${await buildPassengerContext(this.store, { person: passenger, now, text, channel })}\n</ship_context>`;
   }
 
-  async respond(passenger: Person, text: string, history: BetaMessageParam[] = [], opts: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice" } = {}): Promise<Turn> {
+  async respond(passenger: Person, text: string, history: BetaMessageParam[] = [], opts: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice"; onToolStart?: (name: string) => void } = {}): Promise<Turn> {
     const now = this.now();
     const toolCalls: ToolCallRecord[] = [];
     const tools = buildTools({
@@ -74,6 +74,7 @@ export class Director {
       flyers: this.flyers,
       cabinLink: this.cabinLink,
       onToolCall: (rec) => toolCalls.push(rec),
+      onToolStart: opts.onToolStart,
     });
     await this.store.logMessage({ personId: passenger.id, channel: opts.channel ?? "cli", direction: "in", body: text });
 
