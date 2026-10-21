@@ -109,7 +109,8 @@ async function post(path) {
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 }
-let client = null, timer = null, muted = false;
+let client = null, timer = null, muted = false, mic = null;
+const MIC = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
 const CLOSED = {
   CONNECTION_CLOSED_CODE_NORMAL: S.ended,
   CONNECTION_CLOSED_CODE_MICROPHONE_PERMISSION_DENIED: S.mic,
@@ -129,12 +130,21 @@ function hangup(msg) {
   const c = client;
   client = null;
   try { c && c.stopStreaming(); } catch {}
+  mic && mic.getTracks().forEach((t) => t.stop());
+  mic = null;
   $("live").style.display = "none";
   say(msg || S.ended);
 }
 $("call").onclick = async () => {
   say(S.connecting);
+  // Still inside the tap: let the video element play sound later without another tap.
+  const v = $("cap");
+  v.muted = false;
+  v.play().catch(() => {});
   try {
+    // Open the mic before the Capitán starts talking: phones switch their audio mode when the mic turns on, and
+    // that switch swallowed the first seconds of his greeting.
+    try { mic = await navigator.mediaDevices.getUserMedia(MIC); } catch { return hangup(S.mic); }
     const { sessionToken } = await post("/bridge/session");
     client = createClient(sessionToken);
     client.addListener("CONNECTION_CLOSED", closed);
@@ -142,7 +152,7 @@ $("call").onclick = async () => {
     client.addListener("MIC_PERMISSION_DENIED", () => hangup(S.mic));
     client.addListener("VIDEO_PLAY_STARTED", () => say(""));
     $("live").style.display = "block";
-    await client.streamToVideoElement("cap");
+    await client.streamToVideoElement("cap", mic);
     timer = setTimeout(() => hangup(), ${MAX_CALL_MS});
   } catch (e) { report("error", "", e.message); hangup(e.message); }
 };
@@ -222,13 +232,15 @@ import { createClient } from "${ANAM_SDK}";
 ${AUDIO_JS}
 const KEY = ${JSON.stringify(o.key)};
 const $ = (id) => document.getElementById(id);
-let client = null, ws = null, ctx = null, timer = null;
+let client = null, ws = null, ctx = null, timer = null, ownMic = null;
 $("unlock").onclick = () => { $("unlock").remove(); new AudioContext().resume(); };
 function end() {
   clearTimeout(timer);
   const c = client;
   client = null;
   try { c && c.stopStreaming(); } catch {}
+  ownMic && ownMic.getTracks().forEach((t) => t.stop());
+  ownMic = null;
   try { ws && ws.readyState === 1 && ws.send(JSON.stringify({ type: "end" })); ws && ws.close(); } catch {}
   ctx && ctx.close();
   client = ws = ctx = null;
@@ -249,11 +261,16 @@ $("bridgeEnd").onclick = end;
 // The TV's own mic (a laptop or device with a microphone driving the screen).
 $("bridgeBtn").onclick = async () => {
   end();
+  const v = $("tvcap");
+  v.muted = false;
+  v.play().catch(() => {});
   try {
+    // The mic is open before the greeting starts, so turning it on can't cut his first words.
+    ownMic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     const r = await fetch("/tv/" + KEY + "/call", { method: "POST" });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error);
-    await begin(j.sessionToken, "El Puente");
+    await begin(j.sessionToken, "El Puente", ownMic);
   } catch (e) { end(); alert(e.message); }
 };
 // A phone asked to talk on the TV: its mic arrives over the relay and becomes the avatar's microphone.
