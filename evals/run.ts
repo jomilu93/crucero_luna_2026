@@ -27,6 +27,8 @@ interface Case {
   say: string;
   /** "voice" simulates a live video call (spoken replies). */
   channel?: "voice";
+  /** Earlier turns of the same conversation, said first with history carried over; checks apply to `say`. */
+  before?: string[];
   setup?: {
     fill_activity?: string;
     /** The passenger said the admin password. */
@@ -93,7 +95,14 @@ async function runCase(c: Case) {
   const director = new Director(store, { outbox, now: () => now });
   let passenger = c.as === "tv" ? (await store.findPersonByPhone(TV_ADDRESS))! : c.as === "new" ? (await store.findPersonByPhone("tg:4242"))! : (await store.getPerson(c.as))!;
   if (c.setup?.admin) passenger = await store.updatePerson(passenger.id, { admin: true });
-  const turn = await director.respond(passenger, c.say, [], { channel: c.channel });
+  let history: Awaited<ReturnType<typeof director.respond>>["history"] = [];
+  const earlier: string[] = [];
+  for (const b of c.before ?? []) {
+    const t = await director.respond(passenger, b, history, { channel: c.channel });
+    history = t.history;
+    earlier.push(`Passenger: ${b}\nCapitán: ${t.text}`);
+  }
+  const turn = await director.respond(passenger, c.say, history, { channel: c.channel });
   const calls: ToolCallRecord[] = turn.toolCalls;
   const failures: string[] = [];
 
@@ -109,7 +118,7 @@ async function runCase(c: Case) {
   }
   if (c.reply_should_ask && !/\?/.test(turn.text)) failures.push("expected a clarifying question");
   if (c.reply_must_mention_any && !c.reply_must_mention_any.some((m) => turn.text.toLowerCase().includes(m))) failures.push(`reply should mention one of ${c.reply_must_mention_any.join("/")}`);
-  if (c.reply_must_not_mention_any) for (const m of c.reply_must_not_mention_any) if (turn.text.toLowerCase().includes(m.toLowerCase())) failures.push(`reply leaked "${m}"`);
+  if (c.reply_must_not_mention_any) for (const m of c.reply_must_not_mention_any) if (new RegExp(`(^|[^\\p{L}])${m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "iu").test(turn.text.replace(/’/g, "'"))) failures.push(`reply leaked "${m}"`);
   if (turn.text.length > 900) failures.push(`reply too long (${turn.text.length} chars) for WhatsApp`);
   if (c.reply_max_chars && turn.text.length > c.reply_max_chars) failures.push(`reply too long (${turn.text.length} > ${c.reply_max_chars} chars)`);
   if (c.reply_speakable) {
@@ -128,11 +137,11 @@ async function runCase(c: Case) {
         model: process.env.HELPER_MODEL ?? "claude-haiku-5-5",
         max_tokens: 1024,
         system:
-          "You grade one reply from a cruise-director chatbot against its persona rules. Below, between the markers, is the chatbot's full system prompt: its persona and the per-passenger context it was given (today's program and sign-ups are already in it, so details taken from there are not invented). Judge by the persona's own definitions: a warm, plain reply with no gag is in character at any humor level (the persona says many replies need none); *Ding-dong* and ship-speak place names are voice, not gags, so '*Ding-dong.* <answer>' answers in its first line; one line of sponsor enthusiasm before a needed question is fine. Phrases the persona itself prescribes are not gags: 'the event of the season' for any sponsored activity, the stock empty-schedule line 'Tu camastro se ve solitario' (an empty deck chair, not a comment on anyone's love life), and Greek greetings. When the passenger asks who someone or something is (Manpaty, the ship, the captain), describing them is the answer, not a gag. On a live voice call (the context says so) plain spoken sentences are in character even without ship-speak, and so is a reported tool failure stated plainly. Fail humor rules only for a forbidden topic, more than one gag, or a gag as the last line. Keep notes to one or two short sentences.\n\n<chatbot_system_prompt>\n" +
+          "You grade one reply from a cruise-director chatbot against its persona rules. Below, between the markers, is the chatbot's full system prompt: its persona and the per-passenger context it was given (today's program and sign-ups are already in it, so details taken from there are not invented). Judge by the persona's own definitions: a warm, plain reply with no gag is in character at any humor level (the persona says many replies need none); *Ding-dong* and ship-speak place names are voice, not gags, so '*Ding-dong.* <answer>' answers in its first line; one line of sponsor enthusiasm before a needed question is fine. Phrases the persona itself prescribes are not gags: 'the event of the season' for any sponsored activity, the stock empty-schedule line 'Tu camastro se ve solitario' (an empty deck chair, not a comment on anyone's love life), and Greek greetings. When the passenger asks who someone or something is (Manpaty, the ship, the captain), describing them is the answer, not a gag. On a live voice call (the context says so) plain spoken sentences are in character even without ship-speak, and so is a reported tool failure stated plainly. Ship-speak, Greek words and Spanish cues are optional flavor: a short, warm, plain reply that does the job is in character without them. Only tools whose names start with admin_ are admin-only; list_passengers (who is aboard) is for every passenger, even though the persona calls admin_manifest 'the full manifest'. Fail humor rules only for a forbidden topic, more than one gag, or a gag as the last line. Keep notes to one or two short sentences.\n\n<chatbot_system_prompt>\n" +
           context +
           "\n</chatbot_system_prompt>",
         output_config: { format: zodOutputFormat(Verdict) },
-        messages: [{ role: "user", content: `Passenger said: ${c.say}\n\n<reply>\n${turn.text}\n</reply>\n\n(Grader metadata, not part of the reply. Tools the chatbot called this turn and what they returned, which is also ground truth:\n${calls.map((k) => `- ${k.name} ${JSON.stringify(k.input)} → ${k.output.slice(0, 600)}`).join("\n") || "none"})` }],
+        messages: [{ role: "user", content: `${earlier.length ? `Earlier in this conversation:\n${earlier.join("\n")}\n\n` : ""}Passenger said: ${c.say}\n\n<reply>\n${turn.text}\n</reply>\n\n(Grader metadata, not part of the reply. Tools the chatbot called this turn and what they returned, which is also ground truth:\n${calls.map((k) => `- ${k.name} ${JSON.stringify(k.input)} → ${k.output.slice(0, 600)}`).join("\n") || "none"})` }],
       });
       verdict = res.parsed_output ?? undefined;
       if (verdict && !(verdict.in_character && verdict.useful_first && verdict.humor_rules_ok)) failures.push(`judge: ${verdict.notes}`);

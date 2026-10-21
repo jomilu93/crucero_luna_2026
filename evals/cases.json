@@ -51,6 +51,11 @@
     { "id": "voice-program", "as": "sofia", "at": "2026-12-27T14:00:00Z", "channel": "voice", "say": "¿qué hay hoy en el barco?", "expect_tools_any": ["get_program", "get_my_day"], "reply_lang": "es", "reply_speakable": true, "reply_max_chars": 420 },
     { "id": "voice-signup", "as": "valeria", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "apúntame al bingo de hoy", "expect_tools": [{ "name": "signup" }], "reply_speakable": true, "reply_max_chars": 350 },
     { "id": "voice-link", "as": "diego", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "what's my web page link?", "reply_lang": "en", "reply_speakable": true, "reply_max_chars": 350 },
-    { "id": "tv-asks-who", "as": "tv", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "apúntame al bingo", "forbid_tools": ["signup"], "reply_should_ask": true, "reply_speakable": true }
+    { "id": "tv-asks-who", "as": "tv", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "apúntame al bingo", "forbid_tools": ["signup"], "reply_should_ask": true, "reply_speakable": true },
+    { "id": "voice-follow-up", "as": "valeria", "at": "2026-12-27T15:00:00Z", "channel": "voice", "before": ["¿qué hay hoy en la noche?"], "say": "apúntame a ese", "expect_tools": [{ "name": "signup", "args": { "activity_id": "a04" } }], "reply_speakable": true, "reply_max_chars": 350 },
+    { "id": "voice-multi-step", "as": "sofia", "at": "2026-12-27T15:00:00Z", "channel": "voice", "before": ["hola capitán", "¿quién va al bingo de hoy?"], "say": "apúntame a mí también y avísale a Ricardo que voy", "expect_tools": [{ "name": "signup", "args": { "activity_id": "a04" } }, { "name": "send_message" }], "reply_speakable": true, "reply_max_chars": 420 },
+    { "id": "voice-sponsor", "as": "ricardo", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "quiero organizar un karaoke el treinta a las nueve de la noche en el gran salón", "expect_tools": [{ "name": "create_activity" }], "reply_speakable": true, "reply_max_chars": 420 },
+    { "id": "voice-message", "as": "diego", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "tell Ricardo I'm bringing the bingo coins", "expect_tools": [{ "name": "send_message" }], "reply_lang": "en", "reply_speakable": true, "reply_max_chars": 300 },
+    { "id": "voice-remember", "as": "ricardo", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "por cierto, soy alérgico al camarón", "expect_tools": [{ "name": "remember" }], "reply_speakable": true, "reply_max_chars": 300 }
   ]
 }

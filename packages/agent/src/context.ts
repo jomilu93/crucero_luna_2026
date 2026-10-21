@@ -22,7 +22,7 @@ export interface PassengerContext {
 export const TV_ADDRESS = "tv:bridge";
 
 const VOICE_RULES = `# Channel: live voice call
-Everything you write is spoken aloud by your voice on a video call. Reply in at most three short spoken sentences (count them; drop extras like reminders to bring things unless asked), like a person talking: no emoji, no lists, no markdown, no links, never read out ids or codes. Say times the way people say them ("a las ocho de la noche", "at eight tonight"). If you need details, ask one question at a time. Your personal web page link cannot be read aloud: offer to send it by chat instead (send_message to this passenger).`;
+Everything you write is spoken aloud by your voice on a video call. Reply in at most three short spoken sentences, counting the joke and the closing question (the usual shape: what you did or the answer, at most one light aside, one question; drop extras like reminders to bring things unless asked), like a person talking: no emoji, no lists, no markdown, no links, never read out ids or codes. Say times the way people say them ("a las ocho de la noche", "at eight tonight"). If you need details, ask one question at a time. Your personal web page link cannot be read aloud: offer to send it by chat instead (send_message to this passenger).`;
 
 const TV_RULES = `# The shared TV
 This is the TV on the Bridge, not one passenger: several family members may be in front of it. Before signing anyone up, sponsoring, remembering a preference or sending a message, first ask who is speaking (do not say you are signing them up yet), then use their name (person_name). Never use my_cabin_link here.`;
@@ -55,6 +55,7 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
   const today = shipDate(now);
   const { from, to } = dayBounds(today);
   const todays = await store.listActivities({ from, to });
+  const upcoming = (await store.listActivities({ from: to })).filter((a) => a.status === "published");
   const mine = new Set((await store.listSignupsForPerson(person.id)).filter((s) => s.status !== "out").map((s) => s.activityId));
   const memory = await store.getMemory(person.id);
   const guardian = person.guardianId ? await store.getPerson(person.guardianId) : undefined;
@@ -71,6 +72,9 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
     "",
     `# Today's program (${todays.length} activities; ★ = this passenger is signed up or hosting)`,
     ...(await Promise.all(todays.map(async (a) => `${mine.has(a.id) || a.sponsorId === person.id ? "★ " : "  "}${await describeActivity(store, a, person.language)}`))),
+    "",
+    upcoming.length ? `# Rest of the voyage (index only; use get_program for details)` : "",
+    ...upcoming.map((a) => `${mine.has(a.id) || a.sponsorId === person.id ? "★ " : "  "}[${a.id}] ${shipDate(a.startsAt)} ${a.emoji} ${a.title}`),
     "",
     memory.length ? `# What you remember about ${person.name.split(" ")[0]}` : "",
     ...memory.map((m) => `- ${m.key}: ${m.value}`),

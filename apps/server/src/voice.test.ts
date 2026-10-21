@@ -5,7 +5,7 @@ import { MemoryStore, seedSample } from "@crucero/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { createRouter } from "./http.js";
-import { VoiceService, sentences, speakable } from "./voice.js";
+import { VoiceService, sentences, speakable, stillThere } from "./voice.js";
 import { tvKey } from "./web.js";
 
 const SECRET = "voice-secret";
@@ -36,17 +36,17 @@ function fakeVendors() {
   return { calls, fetchFn };
 }
 
-function setup() {
+function setup(opts: { delayMs?: number; bufferAfterMs?: number } = {}) {
   const store = new MemoryStore({ now: () => NOW });
   seedSample(store);
   const heard: { name: string; text: string; channel?: string }[] = [];
   const responder: Responder = {
-    respond: async (p, text, history, opts) => (heard.push({ name: p.name, text, channel: opts?.channel }), { text: "¡A la orden! 🎱 Bingo a las **8:00 pm** [a04]. Más aquí: https://x.y/z", history: [...history, { role: "user", content: text }] }),
+    respond: async (p, text, history, o) => (await new Promise((r) => setTimeout(r, opts.delayMs ?? 0)), heard.push({ name: p.name, text, channel: o?.channel }), { text: "¡A la orden! 🎱 Bingo a las **8:00 pm** [a04]. Más aquí: https://x.y/z", history: [...history, { role: "user", content: text }] }),
   };
   const outbox = { send: async () => {}, sendTemplate: async () => {} };
   const chat = new ChatService(store, responder, outbox, { now: () => NOW });
   const vendors = fakeVendors();
-  const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: { elevenLabsKey: "xi", anamKey: "an" }, fetch: vendors.fetchFn, now: () => NOW });
+  const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: { elevenLabsKey: "xi", anamKey: "an" }, fetch: vendors.fetchFn, now: () => NOW, bufferAfterMs: opts.bufferAfterMs });
   return { store, voice, heard, ...vendors };
 }
 
@@ -79,6 +79,7 @@ describe("setup from the Admin tab", () => {
     expect(agent.platform_settings.overrides.custom_llm_extra_body).toBe(true);
     expect(agent.conversation_config.agent.prompt.prompt).toContain("[session:{{cl_session}}]");
     expect(agent.conversation_config.agent.dynamic_variables.dynamic_variable_placeholders).toEqual({ cl_session: "none" });
+    expect(agent.conversation_config.turn).toMatchObject({ turn_timeout: 8, silence_end_call_timeout: 45 });
     expect(await store.getSetting("voice_agent_id")).toBe("agent_1");
     await voice.setVoice("VoiceIdEspanol123");
     expect(calls.at(-1)).toMatchObject({ url: "https://api.elevenlabs.io/v1/convai/agents/agent_1", method: "PATCH" });
@@ -118,6 +119,58 @@ describe("a call", () => {
     expect(await voice.personFromSession(el.userId.replace(/.$/, "x"))).toBeUndefined();
     await store.setSetting("paused", true);
     await expect(voice.startCall(diego)).rejects.toThrow(/paused/);
+  });
+});
+
+describe("a slow turn", () => {
+  it("speaks a buffer phrase first, then the answer, with no comment lines in the stream", async () => {
+    const { voice, store } = setup({ delayMs: 80, bufferAfterMs: 10 });
+    const sofia = (await store.getPerson("sofia"))!;
+    const req = { headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never;
+    let raw = "";
+    const res = { on: () => res, destroyed: false, writableFinished: false, writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
+    await voice.completions(req, res, JSON.stringify({ messages: [{ role: "user", content: "¿qué hay hoy?" }], user_id: voice.sessionFor(sofia) }));
+    const deltas = raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "");
+    expect(deltas[0]).toBe("");
+    expect(deltas[1]).toBe("Déjame revisar... ");
+    expect(deltas.slice(2).join("")).toBe("¡A la orden! Bingo a las 8:00 pm. Más aquí:");
+    expect(raw).not.toMatch(/^:/m);
+    expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna \(0\.\d s\): ¿qué hay hoy\?/);
+  });
+
+  it("survives ElevenLabs cancelling a turn mid-way (the caller kept talking) and does not save it", async () => {
+    const { voice, store } = setup({ delayMs: 150, bufferAfterMs: 20 });
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => void voice.completions(req, res, body));
+    });
+    await new Promise<void>((r) => server.listen(0, r));
+    const url = `http://localhost:${(server.address() as AddressInfo).port}/v1/chat/completions`;
+    const sofia = (await store.getPerson("sofia"))!;
+    const ask = (content: string, signal?: AbortSignal) =>
+      fetch(url, { method: "POST", signal, headers: { Authorization: `Bearer ${voice.llmSecret()}` }, body: JSON.stringify({ messages: [{ role: "user", content }], user_id: voice.sessionFor(sofia) }) });
+    const abort = new AbortController();
+    const first = await ask("quiero apuntarme a", abort.signal);
+    const reader = first.body!.getReader();
+    await reader.read(); // the role chunk arrives, then the caller keeps talking
+    abort.abort();
+    await new Promise((r) => setTimeout(r, 250)); // the cancelled turn finishes in the background
+    expect(await store.getConversation("sofia")).toBeUndefined();
+    const second = await (await ask("quiero apuntarme al bingo de hoy")).text(); // the server is still up
+    expect(second).toContain("data: [DONE]");
+    expect((await store.getConversation("sofia"))?.history.length).toBeGreaterThan(0);
+    expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna kept talking; turn cancelled by ElevenLabs after 0\.\d s \(not saved\): quiero apuntarme a/);
+    server.close();
+  });
+
+  it("answers a fast turn without the buffer phrase", async () => {
+    const { voice, store } = setup();
+    const req = { headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never;
+    let raw = "";
+    const res = { on: () => res, destroyed: false, writableFinished: false, writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
+    await voice.completions(req, res, JSON.stringify({ messages: [{ role: "user", content: "hola" }], user_id: voice.sessionFor((await store.getPerson("diego"))!) }));
+    expect(raw).not.toContain("Let me check");
   });
 });
 
@@ -227,5 +280,85 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
     const page = await (await fetch(`${base}/tv/${tvKey(SECRET)}`)).text();
     expect(page).toContain("Hablar con el Capitán");
     expect(page).toContain("@anam-ai/js-sdk@4.27.1");
+  });
+});
+
+describe("a dynamic conversation", () => {
+  const fakeRes = () => {
+    let raw = "";
+    const res = { on: () => res, destroyed: false, writableFinished: false, writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) };
+    return { res: res as never, text: () => raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "").join("") };
+  };
+
+  it("carries every turn forward, across Telegram and the call, in one history", async () => {
+    const store = new MemoryStore({ now: () => NOW });
+    seedSample(store);
+    const seen: { text: string; channel?: string; turns: number }[] = [];
+    const responder: Responder = {
+      respond: async (_p, text, history, o) => {
+        seen.push({ text, channel: o?.channel, turns: history.length });
+        return { text: `(${history.length}) ok`, history: [...history, { role: "user", content: text }, { role: "assistant", content: [{ type: "text", text: "ok" }] }] };
+      },
+    };
+    const chat = new ChatService(store, responder, { send: async () => {}, sendTemplate: async () => {} }, { now: () => NOW });
+    const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: {}, now: () => NOW });
+    const sofia = (await store.getPerson("sofia"))!;
+    await chat.handle({ phoneE164: sofia.phoneE164!, text: "¿qué hay hoy?", channel: "telegram" });
+    const say = async (content: string) => {
+      const out = fakeRes();
+      await voice.completions({ headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never, out.res, JSON.stringify({ messages: [{ role: "user", content }], user_id: voice.sessionFor(sofia) }));
+      return out.text();
+    };
+    expect(await say("apúntame al bingo")).toBe("(2) ok");
+    expect(await say("¿y quién más va?")).toBe("(4) ok");
+    expect(seen).toEqual([
+      { text: "¿qué hay hoy?", channel: "telegram", turns: 0 },
+      { text: "apúntame al bingo", channel: "voice", turns: 2 },
+      { text: "¿y quién más va?", channel: "voice", turns: 4 },
+    ]);
+  });
+
+  it("forgets an interrupted turn that only talked, but remembers one that already acted", async () => {
+    const store = new MemoryStore({ now: () => NOW });
+    seedSample(store);
+    let acted = false;
+    const responder: Responder = {
+      respond: async (_p, text, history) => ({
+        text: "ok",
+        history: [
+          ...history,
+          { role: "user", content: text },
+          { role: "assistant", content: acted ? [{ type: "tool_use", id: "t1", name: "signup", input: { activity_id: "a04" } }] : [{ type: "text", text: "¿cuál?" }] },
+          ...(acted ? [{ role: "user" as const, content: [{ type: "tool_result" as const, tool_use_id: "t1", content: "Signed up" }] }] : []),
+        ],
+      }),
+    };
+    const chat = new ChatService(store, responder, { send: async () => {}, sendTemplate: async () => {} }, { now: () => NOW });
+    const sofia = (await store.getPerson("sofia"))!;
+    await chat.converse(sofia, "apúntame a", "voice", { keep: () => false });
+    expect(await store.getConversation("sofia")).toBeUndefined();
+    acted = true;
+    await chat.converse(sofia, "apúntame al bingo", "voice", { keep: () => false });
+    expect(JSON.stringify((await store.getConversation("sofia"))!.history)).toContain('"name":"signup"');
+  });
+
+  it("checks in when the caller goes quiet, gently, without calling Claude or saving anything", async () => {
+    const { voice, store, heard } = setup();
+    const sofia = (await store.getPerson("sofia"))!;
+    const ask = async (messages: unknown[]) => {
+      const out = fakeRes();
+      await voice.completions({ headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never, out.res, JSON.stringify({ messages, user_id: voice.sessionFor(sofia) }));
+      return out.text();
+    };
+    const hi = { role: "assistant", content: "¡Ahoy, Sofía!" };
+    expect(await ask([{ role: "system", content: "x" }, hi])).toBe("¿Sigues ahí, Sofía?");
+    expect(await ask([hi, { role: "user", content: "hola" }, { role: "assistant", content: "¿Qué se te ofrece?" }])).toBe("¿Sigues ahí, Sofía?");
+    expect(await ask([hi, { role: "user", content: "hola" }, { role: "assistant", content: "¿…?" }, { role: "assistant", content: "¿Sigues ahí, Sofía?" }])).toMatch(/^Aquí sigo en el Puente/);
+    expect(await ask([hi, { role: "user", content: "  " }])).toBe("¿Sigues ahí, Sofía?");
+    expect(heard).toEqual([]);
+    expect(await store.getConversation("sofia")).toBeUndefined();
+    expect(stillThere({ name: "Diego Luna", language: "en", phoneE164: "+1" }, 3)).toBe("I'll head back to the helm. Call me anytime!");
+    expect(stillThere({ name: "Puente (TV)", language: "es", phoneE164: "tv:bridge" }, 1)).toBe("¿Sigues ahí?");
+    expect(await ask([hi, { role: "user", content: "¿qué hay hoy?" }])).toContain("Bingo");
   });
 });
