@@ -235,6 +235,10 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
     expect(lines).toMatch(/extra body ✗ · first message ✓ · language ✓/);
     expect(lines).toMatch(/conversation 12345678 · failed · 0 s · 0 turns · ended: Custom LLM extra body override is not allowed/);
     expect(lines).toMatch(/call closed \(Sofía Luna\) SERVER_CLOSED_CONNECTION: agent ended/);
+    for (let i = 0; i < 25; i++) ctx.voice.clientEvent("Sofía Luna", "closed", "CONNECTION_CLOSED_CODE_NORMAL", "");
+    const burst = (await ctx.voice.diagnose()).filter((l) => l.startsWith("event "));
+    expect(burst[0]).toMatch(/call closed \(Sofía Luna\) NORMAL ×25$/);
+    expect(burst[1]).toMatch(/agent ended/);
     const tvLog = await fetch(`${base}/tv/${tvKey(SECRET)}/log`, { method: "POST", body: new URLSearchParams({ event: "closed", code: "X", details: "tv detail" }) });
     expect(tvLog.status).toBe(200);
     expect((await ctx.voice.diagnose()).join("\n")).toMatch(/call closed \(TV\) X: tv detail/);

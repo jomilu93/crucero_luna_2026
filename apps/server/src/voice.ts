@@ -352,6 +352,11 @@ export class VoiceService {
   /** A call event: from a browser (why Anam closed the call) or from our own endpoints. Logged and kept for the Admin tab. */
   note(line: string): void {
     const entry = `${this.now().toISOString().slice(11, 19)} ${line}`.slice(0, 400);
+    // A burst of the same event (a page reporting one close many times) must not push the useful ones out.
+    if (this.events[0]?.replace(/ ×\d+$/, "") === entry) {
+      this.events[0] = `${entry} ×${Number(this.events[0].match(/×(\d+)$/)?.[1] ?? 1) + 1}`;
+      return;
+    }
     this.events.unshift(entry);
     this.events.length = Math.min(this.events.length, 20);
     this.log(`voice ${line}`);
