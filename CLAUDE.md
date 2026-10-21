@@ -23,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (141 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (142 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -85,6 +85,9 @@ answer; a filler is never counted as the caller going quiet. The custom LLM answ
 Call length: `MAX_CALL_SECONDS` (1 h) on the ElevenLabs agent (`conversation.max_duration_seconds`, default 10 min,
 needs "Volver a configurar"), the Anam session (`maxSessionLengthSeconds`; Anam's plan cap still applies) and the
 call pages' safety timer (was 10 min). Calls otherwise end when the caller hangs up or after 45 s of silence.
+Greeting cut off at call start (pilot): the Anam SDK opened the mic after the session started and phones switch
+audio mode when the mic turns on, swallowing the first seconds; the call pages now open the mic on the tap and pass
+it to `streamToVideoElement`, and prime the video element to play sound.
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;

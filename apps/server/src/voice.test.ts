@@ -5,6 +5,7 @@ import { MemoryStore, seedSample } from "@crucero/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { createRouter } from "./http.js";
+import { phoneBridgePage, tvBridge } from "./bridge.js";
 import { VoiceService, sentences, speakable, stillThere } from "./voice.js";
 import { tvKey } from "./web.js";
 
@@ -475,5 +476,17 @@ describe("fillers and check-ins that respect a turn in progress", () => {
     const c = liveRes();
     await voice.completions(req(voice), c.res, JSON.stringify({ messages: [{ role: "user", content: "x" }, { role: "assistant", content: "Mmm, déjame ver... " }, { role: "assistant", content: "El bingo es a las ocho." }], user_id: voice.sessionFor(sofia) }));
     expect(c.text()).toBe("¿Sigues ahí, Sofía?");
+  });
+});
+
+describe("call pages", () => {
+  it("open the mic before the session starts, so the greeting isn't cut by the phone's audio switch", () => {
+    const phone = phoneBridgePage({ lang: "es", base: "/c/x", name: "Sofía", ready: true });
+    expect(phone.indexOf("getUserMedia(MIC)")).toBeGreaterThan(0);
+    expect(phone.indexOf("getUserMedia(MIC)")).toBeLessThan(phone.indexOf('post("/bridge/session")'));
+    expect(phone).toContain('streamToVideoElement("cap", mic)');
+    const tv = tvBridge({ key: "k" });
+    expect(tv.indexOf("ownMic = await navigator.mediaDevices.getUserMedia")).toBeLessThan(tv.indexOf('"/call", { method: "POST" }'));
+    expect(tv).toContain('begin(j.sessionToken, "El Puente", ownMic)');
   });
 });
