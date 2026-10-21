@@ -119,13 +119,15 @@ const CLOSED = {
 const report = (event, code, details) =>
   fetch(BASE + "/bridge/log", { method: "POST", body: new URLSearchParams({ event, code: code || "", details: details || "" }) }).catch(() => {});
 function closed(code, details) {
+  if (!client) return; // stopStreaming() fires CONNECTION_CLOSED again; report each call's end once
   report("closed", code, details);
   hangup((CLOSED[code] || S.dropped) + (details ? " (" + details + ")" : ""));
 }
 function hangup(msg) {
   clearTimeout(timer);
-  try { client && client.stopStreaming(); } catch {}
+  const c = client;
   client = null;
+  try { c && c.stopStreaming(); } catch {}
   $("live").style.display = "none";
   say(msg || S.ended);
 }
@@ -223,7 +225,9 @@ let client = null, ws = null, ctx = null, timer = null;
 $("unlock").onclick = () => { $("unlock").remove(); new AudioContext().resume(); };
 function end() {
   clearTimeout(timer);
-  try { client && client.stopStreaming(); } catch {}
+  const c = client;
+  client = null;
+  try { c && c.stopStreaming(); } catch {}
   try { ws && ws.readyState === 1 && ws.send(JSON.stringify({ type: "end" })); ws && ws.close(); } catch {}
   ctx && ctx.close();
   client = ws = ctx = null;
@@ -233,7 +237,7 @@ const report = (event, code, details) =>
   fetch("/tv/" + KEY + "/log", { method: "POST", body: new URLSearchParams({ event, code: code || "", details: details || "" }) }).catch(() => {});
 async function begin(sessionToken, who, audio) {
   client = createClient(sessionToken);
-  client.addListener("CONNECTION_CLOSED", (code, details) => { report("closed", code, details); end(); });
+  client.addListener("CONNECTION_CLOSED", (code, details) => { if (!client) return; report("closed", code, details); end(); });
   client.addListener("SERVER_WARNING", (m) => report("warning", "", m));
   $("bridgeWho").textContent = "🔴 " + who;
   $("bridge").style.display = "block";
