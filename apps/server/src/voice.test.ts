@@ -127,7 +127,7 @@ describe("a slow turn", () => {
     const sofia = (await store.getPerson("sofia"))!;
     const req = { headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never;
     let raw = "";
-    const res = { writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
+    const res = { on: () => res, destroyed: false, writableFinished: false, writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
     await voice.completions(req, res, JSON.stringify({ messages: [{ role: "user", content: "¿qué hay hoy?" }], user_id: voice.sessionFor(sofia) }));
     const deltas = raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "");
     expect(deltas[0]).toBe("");
@@ -137,11 +137,37 @@ describe("a slow turn", () => {
     expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna \(0\.\d s\): ¿qué hay hoy\?/);
   });
 
+  it("survives ElevenLabs cancelling a turn mid-way (the caller kept talking) and does not save it", async () => {
+    const { voice, store } = setup({ delayMs: 150, bufferAfterMs: 20 });
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => void voice.completions(req, res, body));
+    });
+    await new Promise<void>((r) => server.listen(0, r));
+    const url = `http://localhost:${(server.address() as AddressInfo).port}/v1/chat/completions`;
+    const sofia = (await store.getPerson("sofia"))!;
+    const ask = (content: string, signal?: AbortSignal) =>
+      fetch(url, { method: "POST", signal, headers: { Authorization: `Bearer ${voice.llmSecret()}` }, body: JSON.stringify({ messages: [{ role: "user", content }], user_id: voice.sessionFor(sofia) }) });
+    const abort = new AbortController();
+    const first = await ask("quiero apuntarme a", abort.signal);
+    const reader = first.body!.getReader();
+    await reader.read(); // the role chunk arrives, then the caller keeps talking
+    abort.abort();
+    await new Promise((r) => setTimeout(r, 250)); // the cancelled turn finishes in the background
+    expect(await store.getConversation("sofia")).toBeUndefined();
+    const second = await (await ask("quiero apuntarme al bingo de hoy")).text(); // the server is still up
+    expect(second).toContain("data: [DONE]");
+    expect((await store.getConversation("sofia"))?.history.length).toBeGreaterThan(0);
+    expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna kept talking; turn cancelled by ElevenLabs after 0\.\d s \(not saved\): quiero apuntarme a/);
+    server.close();
+  });
+
   it("answers a fast turn without the buffer phrase", async () => {
     const { voice, store } = setup();
     const req = { headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never;
     let raw = "";
-    const res = { writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
+    const res = { on: () => res, destroyed: false, writableFinished: false, writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
     await voice.completions(req, res, JSON.stringify({ messages: [{ role: "user", content: "hola" }], user_id: voice.sessionFor((await store.getPerson("diego"))!) }));
     expect(raw).not.toContain("Let me check");
   });

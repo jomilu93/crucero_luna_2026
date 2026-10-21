@@ -189,12 +189,19 @@ export class ChatService {
    * One Capitán turn on the passenger's shared conversation, without sending anything: the chat
    * sends the reply itself, the voice call speaks it. Chat and voice share one history.
    */
-  async converse(person: Person, text: string, channel: "whatsapp" | "telegram" | "web" | "voice"): Promise<string> {
+  async converse(
+    person: Person,
+    text: string,
+    channel: "whatsapp" | "telegram" | "web" | "voice",
+    opts: { keep?: () => boolean } = {},
+  ): Promise<string> {
     if (!person.admin && (await isPaused(this.store))) return OFF_DUTY[person.language];
     const saved = await this.store.getConversation(person.id);
     const stale = !saved || this.now().getTime() - new Date(saved.updatedAt).getTime() > this.staleAfterMs;
     const history = stale ? [] : trimHistory(saved!.history as BetaMessageParam[], this.maxHistory);
     const turn = await this.responder.respond(person, text, history, { channel });
+    // A voice turn the caller talked over was never heard: keep it out of the shared history.
+    if (opts.keep && !opts.keep()) return turn.text;
     await this.store.saveConversation(person.id, trimHistory(turn.history, this.maxHistory));
     return turn.text;
   }

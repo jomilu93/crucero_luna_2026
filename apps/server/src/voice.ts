@@ -414,28 +414,41 @@ export class VoiceService {
     const created = Math.floor(Date.now() / 1000);
     const chunk = (delta: Record<string, string>, finish: string | null = null) =>
       `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: "capitan-lunatico", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+    // ElevenLabs cancels this request when the caller keeps talking. Writing into the dead connection must be
+    // a no-op (an unhandled stream error would take the whole server down and fail the call).
+    let cancelled = false;
+    res.on("close", () => {
+      if (!res.writableFinished) cancelled = true;
+    });
+    res.on("error", () => (cancelled = true));
+    const send = (s: string) => {
+      if (!cancelled && !res.destroyed) res.write(s);
+    };
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-    res.write(chunk({ role: "assistant", content: "" }));
+    send(chunk({ role: "assistant", content: "" }));
 
     const started = Date.now();
     const en = person?.language === "en";
     // A turn with tool calls can take several seconds; ElevenLabs gives up on a custom LLM that stays silent, so a
     // slow turn first speaks a buffer phrase. Their docs: end it with "... " so the real answer doesn't run into it.
-    const buffer = setTimeout(() => res.write(chunk({ content: en ? "Let me check... " : "Déjame revisar... " })), this.deps.bufferAfterMs ?? 1200);
+    const buffer = setTimeout(() => send(chunk({ content: en ? "Let me check... " : "Déjame revisar... " })), this.deps.bufferAfterMs ?? 1200);
     let reply: string;
     try {
       if (!person) reply = "Perdón, se cortó la señal del Puente. Vuelve a llamar desde tu página, por favor.";
       else if (!text.trim()) reply = en ? "I'm listening." : "Te escucho.";
-      else reply = speakable(await this.deps.chat.converse(person, text, "voice")) || (en ? "Aye aye!" : "¡A la orden!");
-      if (person) this.note(`${person.name} (${((Date.now() - started) / 1000).toFixed(1)} s): ${text.slice(0, 50)} → ${reply.slice(0, 70)}`);
+      else reply = speakable(await this.deps.chat.converse(person, text, "voice", { keep: () => !cancelled })) || (en ? "Aye aye!" : "¡A la orden!");
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      if (person && cancelled) this.note(`${person.name} kept talking; turn cancelled by ElevenLabs after ${secs} s (not saved): ${text.slice(0, 50)}`);
+      else if (person) this.note(`${person.name} (${secs} s): ${text.slice(0, 50)} → ${reply.slice(0, 70)}`);
     } catch (err) {
       this.note(`custom LLM ERROR after ${((Date.now() - started) / 1000).toFixed(1)} s: ${err instanceof Error ? err.message : err}`);
       reply = en ? "Rough seas on the line, give me a moment and ask again." : "Hay oleaje en la línea; dame un momento y vuelve a preguntar.";
     } finally {
       clearTimeout(buffer);
     }
-    for (const s of sentences(reply)) res.write(chunk({ content: s }));
-    res.write(chunk({}, "stop"));
+    if (cancelled || res.destroyed) return;
+    for (const s of sentences(reply)) send(chunk({ content: s }));
+    send(chunk({}, "stop"));
     res.end("data: [DONE]\n\n");
   }
 
