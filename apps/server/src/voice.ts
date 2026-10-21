@@ -100,6 +100,16 @@ export function speakable(text: string): string {
     .trim();
 }
 
+/** What the Capitán says when the caller has gone quiet; gentler each time, never a repeat of the last answer. */
+export function stillThere(person: Pick<Person, "name" | "nickname" | "language" | "phoneE164">, nth: number): string {
+  const first = person.phoneE164 === TV_ADDRESS ? "" : (person.nickname ?? person.name.split(" ")[0]);
+  const lines =
+    person.language === "en"
+      ? [`Are you still there${first ? `, ${first}` : ""}?`, "I'm still here on the Bridge, no rush. Just say something whenever you're ready.", "I'll head back to the helm. Call me anytime!"]
+      : [`¿Sigues ahí${first ? `, ${first}` : ""}?`, "Aquí sigo en el Puente, sin prisa. Dime cuando quieras.", "Me regreso al timón. ¡Llámame cuando quieras!"];
+  return lines[Math.min(nth, lines.length) - 1];
+}
+
 /** Splits speech into sentence-sized chunks so the voice can start before the whole reply is streamed. */
 export function sentences(text: string): string[] {
   return text.match(/[^.!?\n]*[.!?\n]+["')\]]*\s*|[^.!?\n]+$/g)?.filter((s) => s.trim()) ?? [text];
@@ -221,6 +231,9 @@ export class VoiceService {
           },
         },
         tts: { voice_id: voiceId, model_id: TTS_MODEL },
+        // Natural turn-taking: after 8 s of caller silence ElevenLabs asks us for a check-in ("¿Sigues ahí?"), and
+        // after 45 s of silence it hangs up politely. Barge-in interruptions are on by default.
+        turn: { turn_timeout: 8, silence_end_call_timeout: 45, turn_eagerness: "normal" },
       },
       platform_settings: {
         // Each call names its passenger in custom_llm_extra_body; ElevenLabs refuses it (1008) unless allowed here.
@@ -364,6 +377,9 @@ export class VoiceService {
         const want = `${this.deps.publicUrl}/v1/chat/completions`;
         out.push(`agent llm: ${prompt.llm ?? "?"} → ${prompt.custom_llm?.url ?? "no custom url"}${prompt.custom_llm?.url === want ? " ✓" : ` ✗ (expected ${want})`}`);
         out.push(`agent overrides: extra body ${ov.custom_llm_extra_body ? "✓" : "✗"} · first message ${ov.conversation_config_override?.agent?.first_message ? "✓" : "✗"} · language ${ov.conversation_config_override?.agent?.language ? "✓" : "✗"}`);
+        const turn = agent?.conversation_config?.turn ?? {};
+        const events: string[] = agent?.conversation_config?.conversation?.client_events ?? [];
+        out.push(`agent turns: check-in after ${turn.turn_timeout ?? "?"} s · hang up after ${turn.silence_end_call_timeout ?? "?"} s silent · eagerness ${turn.turn_eagerness ?? "?"} · interruptions ${events.length ? (events.includes("interruption") ? "✓" : "✗ (turn on the interruption client event)") : "default"}`);
         out.push(`agent voice: ${agent?.conversation_config?.tts?.voice_id ?? "?"} · tts ${agent?.conversation_config?.tts?.model_id ?? "?"} · language ${agent?.conversation_config?.agent?.language ?? "?"}`);
         const list = (await this.eleven(`/v1/convai/conversations?agent_id=${encodeURIComponent(st.agentId)}&page_size=3`)) as any;
         for (const c of (list?.conversations ?? []).slice(0, 3)) {
@@ -407,15 +423,21 @@ export class VoiceService {
       (await this.personFromSession(fromPrompt)) ??
       (await this.personFromSession(body.elevenlabs_extra_body?.session));
     if (!person) this.note(`custom LLM hit without a valid passenger session (user_id ${body.user_id ? "present" : "missing"}, prompt ${fromPrompt ? "has" : "lacks"} session)`);
-    const lastUser = [...(body.messages ?? [])].reverse().find((m) => m.role === "user");
-    const text = typeof lastUser?.content === "string" ? lastUser.content : Array.isArray(lastUser?.content) ? lastUser.content.map((p: { text?: string }) => p.text ?? "").join(" ") : "";
+    const said = (m: { content: unknown } | undefined) =>
+      typeof m?.content === "string" ? m.content : Array.isArray(m?.content) ? m.content.map((p: { text?: string }) => p.text ?? "").join(" ") : "";
+    const turns = (body.messages ?? []).filter((m) => m.role !== "system");
+    const lastUser = [...turns].reverse().find((m) => m.role === "user");
+    const text = said(lastUser);
+    // ElevenLabs re-engages a silent caller (turn_timeout) by asking for a reply with no new words from them:
+    // the conversation ends on our own turn. That is a check-in, never a reason to answer the last question again.
+    const trailingCapitan = turns.length - 1 - turns.map((m) => m.role).lastIndexOf("user");
+    const silent = turns.length > 0 && (trailingCapitan > 0 || !said(turns[turns.length - 1]).trim());
 
     const id = `chatcmpl-${randomBytes(6).toString("hex")}`;
     const created = Math.floor(Date.now() / 1000);
     const chunk = (delta: Record<string, string>, finish: string | null = null) =>
       `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: "capitan-lunatico", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
-    // ElevenLabs cancels this request when the caller keeps talking. Writing into the dead connection must be
-    // a no-op (an unhandled stream error would take the whole server down and fail the call).
+    // ElevenLabs cancels this request when the caller keeps talking; writing into the dead connection is a no-op.
     let cancelled = false;
     res.on("close", () => {
       if (!res.writableFinished) cancelled = true;
@@ -429,6 +451,14 @@ export class VoiceService {
 
     const started = Date.now();
     const en = person?.language === "en";
+    if (silent && person) {
+      const line = stillThere(person, Math.max(1, trailingCapitan));
+      this.note(`${person.name} is quiet; check-in ${Math.max(1, trailingCapitan)}`);
+      for (const s of sentences(line)) send(chunk({ content: s }));
+      send(chunk({}, "stop"));
+      if (!cancelled && !res.destroyed) res.end("data: [DONE]\n\n");
+      return;
+    }
     // A turn with tool calls can take several seconds; ElevenLabs gives up on a custom LLM that stays silent, so a
     // slow turn first speaks a buffer phrase. Their docs: end it with "... " so the real answer doesn't run into it.
     const buffer = setTimeout(() => send(chunk({ content: en ? "Let me check... " : "Déjame revisar... " })), this.deps.bufferAfterMs ?? 1200);

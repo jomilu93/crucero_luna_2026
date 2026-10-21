@@ -162,6 +162,10 @@ voice), how the last ElevenLabs conversations ended, and recent call events (clo
 pages, custom LLM hits); the same events are in `fly logs` as `voice …` lines. The caller is identified by a
 signed session sent as the ElevenLabs `user_id` (with a `{{cl_session}}` prompt variable as backup), which needs
 no override permission on the agent.
+Conversation feel: the caller can talk over the Capitán (ElevenLabs stops him and cancels our turn), slow answers
+start with a short buffer phrase, and after 8 s of silence he asks "¿Sigues ahí?" (gentler the second time; the call
+ends politely after 45 s). These turn settings are applied by **Configurar agente de voz**, so click it again after
+deploying.
 
 ### Secrets
 

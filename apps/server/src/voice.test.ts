@@ -5,7 +5,7 @@ import { MemoryStore, seedSample } from "@crucero/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { createRouter } from "./http.js";
-import { VoiceService, sentences, speakable } from "./voice.js";
+import { VoiceService, sentences, speakable, stillThere } from "./voice.js";
 import { tvKey } from "./web.js";
 
 const SECRET = "voice-secret";
@@ -79,6 +79,7 @@ describe("setup from the Admin tab", () => {
     expect(agent.platform_settings.overrides.custom_llm_extra_body).toBe(true);
     expect(agent.conversation_config.agent.prompt.prompt).toContain("[session:{{cl_session}}]");
     expect(agent.conversation_config.agent.dynamic_variables.dynamic_variable_placeholders).toEqual({ cl_session: "none" });
+    expect(agent.conversation_config.turn).toMatchObject({ turn_timeout: 8, silence_end_call_timeout: 45 });
     expect(await store.getSetting("voice_agent_id")).toBe("agent_1");
     await voice.setVoice("VoiceIdEspanol123");
     expect(calls.at(-1)).toMatchObject({ url: "https://api.elevenlabs.io/v1/convai/agents/agent_1", method: "PATCH" });
@@ -339,5 +340,25 @@ describe("a dynamic conversation", () => {
     acted = true;
     await chat.converse(sofia, "apúntame al bingo", "voice", { keep: () => false });
     expect(JSON.stringify((await store.getConversation("sofia"))!.history)).toContain('"name":"signup"');
+  });
+
+  it("checks in when the caller goes quiet, gently, without calling Claude or saving anything", async () => {
+    const { voice, store, heard } = setup();
+    const sofia = (await store.getPerson("sofia"))!;
+    const ask = async (messages: unknown[]) => {
+      const out = fakeRes();
+      await voice.completions({ headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never, out.res, JSON.stringify({ messages, user_id: voice.sessionFor(sofia) }));
+      return out.text();
+    };
+    const hi = { role: "assistant", content: "¡Ahoy, Sofía!" };
+    expect(await ask([{ role: "system", content: "x" }, hi])).toBe("¿Sigues ahí, Sofía?");
+    expect(await ask([hi, { role: "user", content: "hola" }, { role: "assistant", content: "¿Qué se te ofrece?" }])).toBe("¿Sigues ahí, Sofía?");
+    expect(await ask([hi, { role: "user", content: "hola" }, { role: "assistant", content: "¿…?" }, { role: "assistant", content: "¿Sigues ahí, Sofía?" }])).toMatch(/^Aquí sigo en el Puente/);
+    expect(await ask([hi, { role: "user", content: "  " }])).toBe("¿Sigues ahí, Sofía?");
+    expect(heard).toEqual([]);
+    expect(await store.getConversation("sofia")).toBeUndefined();
+    expect(stillThere({ name: "Diego Luna", language: "en", phoneE164: "+1" }, 3)).toBe("I'll head back to the helm. Call me anytime!");
+    expect(stillThere({ name: "Puente (TV)", language: "es", phoneE164: "tv:bridge" }, 1)).toBe("¿Sigues ahí?");
+    expect(await ask([hi, { role: "user", content: "¿qué hay hoy?" }])).toContain("Bingo");
   });
 });
