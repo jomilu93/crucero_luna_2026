@@ -38,6 +38,25 @@ export interface ChatServiceOptions {
   now?: () => Date;
 }
 
+/** Tools that change the ship or reach people; read-only ones (program, who's going, weather…) are not listed. */
+const ACTION_TOOLS = new Set([
+  "create_activity",
+  "update_activity",
+  "cancel_activity",
+  "signup",
+  "generate_flyer",
+  "send_message",
+  "remember",
+  "set_preferences",
+  "admin_remove_passenger",
+  "admin_set_role",
+  "admin_set_admin",
+  "admin_pause",
+]);
+
+const didSomething = (turn: BetaMessageParam[]) =>
+  turn.some((m) => m.role === "assistant" && Array.isArray(m.content) && m.content.some((b) => b.type === "tool_use" && ACTION_TOOLS.has(b.name)));
+
 const digest = (s: string) => createHash("sha256").update(s.trim().toLowerCase()).digest();
 
 /** Case-insensitive, constant-time; "/admin <password>" works too. */
@@ -200,8 +219,9 @@ export class ChatService {
     const stale = !saved || this.now().getTime() - new Date(saved.updatedAt).getTime() > this.staleAfterMs;
     const history = stale ? [] : trimHistory(saved!.history as BetaMessageParam[], this.maxHistory);
     const turn = await this.responder.respond(person, text, history, { channel });
-    // A voice turn the caller talked over was never heard: keep it out of the shared history.
-    if (opts.keep && !opts.keep()) return turn.text;
+    // A voice turn the caller talked over was never heard: keep it out of the shared history, unless it already
+    // did something (signed someone up, sent a message…), which the Capitán must remember.
+    if (opts.keep && !opts.keep() && !didSomething(turn.history.slice(history.length))) return turn.text;
     await this.store.saveConversation(person.id, trimHistory(turn.history, this.maxHistory));
     return turn.text;
   }

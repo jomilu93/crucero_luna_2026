@@ -27,6 +27,8 @@ interface Case {
   say: string;
   /** "voice" simulates a live video call (spoken replies). */
   channel?: "voice";
+  /** Earlier turns of the same conversation, said first with history carried over; checks apply to `say`. */
+  before?: string[];
   setup?: {
     fill_activity?: string;
     /** The passenger said the admin password. */
@@ -93,7 +95,14 @@ async function runCase(c: Case) {
   const director = new Director(store, { outbox, now: () => now });
   let passenger = c.as === "tv" ? (await store.findPersonByPhone(TV_ADDRESS))! : c.as === "new" ? (await store.findPersonByPhone("tg:4242"))! : (await store.getPerson(c.as))!;
   if (c.setup?.admin) passenger = await store.updatePerson(passenger.id, { admin: true });
-  const turn = await director.respond(passenger, c.say, [], { channel: c.channel });
+  let history: Awaited<ReturnType<typeof director.respond>>["history"] = [];
+  const earlier: string[] = [];
+  for (const b of c.before ?? []) {
+    const t = await director.respond(passenger, b, history, { channel: c.channel });
+    history = t.history;
+    earlier.push(`Passenger: ${b}\nCapitán: ${t.text}`);
+  }
+  const turn = await director.respond(passenger, c.say, history, { channel: c.channel });
   const calls: ToolCallRecord[] = turn.toolCalls;
   const failures: string[] = [];
 
@@ -132,7 +141,7 @@ async function runCase(c: Case) {
           context +
           "\n</chatbot_system_prompt>",
         output_config: { format: zodOutputFormat(Verdict) },
-        messages: [{ role: "user", content: `Passenger said: ${c.say}\n\n<reply>\n${turn.text}\n</reply>\n\n(Grader metadata, not part of the reply. Tools the chatbot called this turn and what they returned, which is also ground truth:\n${calls.map((k) => `- ${k.name} ${JSON.stringify(k.input)} → ${k.output.slice(0, 600)}`).join("\n") || "none"})` }],
+        messages: [{ role: "user", content: `${earlier.length ? `Earlier in this conversation:\n${earlier.join("\n")}\n\n` : ""}Passenger said: ${c.say}\n\n<reply>\n${turn.text}\n</reply>\n\n(Grader metadata, not part of the reply. Tools the chatbot called this turn and what they returned, which is also ground truth:\n${calls.map((k) => `- ${k.name} ${JSON.stringify(k.input)} → ${k.output.slice(0, 600)}`).join("\n") || "none"})` }],
       });
       verdict = res.parsed_output ?? undefined;
       if (verdict && !(verdict.in_character && verdict.useful_first && verdict.humor_rules_ok)) failures.push(`judge: ${verdict.notes}`);

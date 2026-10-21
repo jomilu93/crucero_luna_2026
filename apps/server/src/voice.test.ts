@@ -281,3 +281,63 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
     expect(page).toContain("@anam-ai/js-sdk@4.27.1");
   });
 });
+
+describe("a dynamic conversation", () => {
+  const fakeRes = () => {
+    let raw = "";
+    const res = { on: () => res, destroyed: false, writableFinished: false, writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) };
+    return { res: res as never, text: () => raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "").join("") };
+  };
+
+  it("carries every turn forward, across Telegram and the call, in one history", async () => {
+    const store = new MemoryStore({ now: () => NOW });
+    seedSample(store);
+    const seen: { text: string; channel?: string; turns: number }[] = [];
+    const responder: Responder = {
+      respond: async (_p, text, history, o) => {
+        seen.push({ text, channel: o?.channel, turns: history.length });
+        return { text: `(${history.length}) ok`, history: [...history, { role: "user", content: text }, { role: "assistant", content: [{ type: "text", text: "ok" }] }] };
+      },
+    };
+    const chat = new ChatService(store, responder, { send: async () => {}, sendTemplate: async () => {} }, { now: () => NOW });
+    const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: {}, now: () => NOW });
+    const sofia = (await store.getPerson("sofia"))!;
+    await chat.handle({ phoneE164: sofia.phoneE164!, text: "¿qué hay hoy?", channel: "telegram" });
+    const say = async (content: string) => {
+      const out = fakeRes();
+      await voice.completions({ headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never, out.res, JSON.stringify({ messages: [{ role: "user", content }], user_id: voice.sessionFor(sofia) }));
+      return out.text();
+    };
+    expect(await say("apúntame al bingo")).toBe("(2) ok");
+    expect(await say("¿y quién más va?")).toBe("(4) ok");
+    expect(seen).toEqual([
+      { text: "¿qué hay hoy?", channel: "telegram", turns: 0 },
+      { text: "apúntame al bingo", channel: "voice", turns: 2 },
+      { text: "¿y quién más va?", channel: "voice", turns: 4 },
+    ]);
+  });
+
+  it("forgets an interrupted turn that only talked, but remembers one that already acted", async () => {
+    const store = new MemoryStore({ now: () => NOW });
+    seedSample(store);
+    let acted = false;
+    const responder: Responder = {
+      respond: async (_p, text, history) => ({
+        text: "ok",
+        history: [
+          ...history,
+          { role: "user", content: text },
+          { role: "assistant", content: acted ? [{ type: "tool_use", id: "t1", name: "signup", input: { activity_id: "a04" } }] : [{ type: "text", text: "¿cuál?" }] },
+          ...(acted ? [{ role: "user" as const, content: [{ type: "tool_result" as const, tool_use_id: "t1", content: "Signed up" }] }] : []),
+        ],
+      }),
+    };
+    const chat = new ChatService(store, responder, { send: async () => {}, sendTemplate: async () => {} }, { now: () => NOW });
+    const sofia = (await store.getPerson("sofia"))!;
+    await chat.converse(sofia, "apúntame a", "voice", { keep: () => false });
+    expect(await store.getConversation("sofia")).toBeUndefined();
+    acted = true;
+    await chat.converse(sofia, "apúntame al bingo", "voice", { keep: () => false });
+    expect(JSON.stringify((await store.getConversation("sofia"))!.history)).toContain('"name":"signup"');
+  });
+});
