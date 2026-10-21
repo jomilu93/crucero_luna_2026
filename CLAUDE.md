@@ -71,7 +71,8 @@ ship/captain names, Manpaty (she/her) and new-passenger onboarding. Harness: `as
 `setup.admin`, `setup.add_passengers`, `reply_speakable`, `reply_max_chars`, `before` (earlier turns, history carried).
 Voice parity (2026-10-21): 56 cases; multi-turn voice cases (follow-up "apúntame a ese", sign-up + message in one
 request) and voice sponsor/message/remember. Voice turns share the Telegram history; a turn the caller talks over is
-dropped from history unless it already acted; slow turns speak a buffer phrase ("Déjame revisar... ").
+dropped from history unless it already acted; live eval 49/56 (voice 8/9, the miss a four-sentence reply, now
+counted in the voice rules); slow turns speak a buffer phrase ("Déjame revisar... ").
 Natural turns: the agent's `conversation_config.turn` (check-in after 8 s of silence, hang up after 45 s, eagerness
 normal). ElevenLabs re-engages by calling our LLM with no new user words; `completions()` answers those with
 `stillThere()` ("¿Sigues ahí, Sofía?" → "Aquí sigo…" → goodbye) without Claude or history. Needs "Volver a configurar".
