@@ -195,6 +195,13 @@ describe("passenger context", () => {
     expect(text).toMatch(/ {2}\[a04\] 🎱 Bingo Lunático/);
     expect(text).toContain("competitive:");
   });
+  it("indexes the rest of the voyage so later activities are found by name", async () => {
+    const { store, passenger } = await ctxFor("valeria");
+    const text = await buildPassengerContext(store, { person: passenger, now: NOW, text: "" });
+    expect(text).toContain("# Rest of the voyage");
+    expect(text).toMatch(/★ \[a09\] 2026-12-30 🎤 Karaoke de camarote/);
+    expect(text.split("# Rest of the voyage")[1]).not.toContain("[a03]");
+  });
   it("shows a headline on special days", async () => {
     const { store, passenger } = await ctxFor("sofia", new Date("2026-12-28T13:00:00Z"));
     const text = await buildPassengerContext(store, { person: passenger, now: new Date("2026-12-28T13:00:00Z"), text: "" });

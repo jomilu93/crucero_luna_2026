@@ -23,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (135 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (136 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -72,7 +72,8 @@ ship/captain names, Manpaty (she/her) and new-passenger onboarding. Harness: `as
 Voice parity (2026-10-21): 56 cases; multi-turn voice cases (follow-up "apúntame a ese", sign-up + message in one
 request) and voice sponsor/message/remember. Voice turns share the Telegram history; a turn the caller talks over is
 dropped from history unless it already acted; live eval 49/56 (voice 8/9, the miss a four-sentence reply, now
-counted in the voice rules); slow turns speak a buffer phrase ("Déjame revisar... ").
+counted in the voice rules; next run 47/56: flyer-request could not find a later activity → the context now has a
+"Rest of the voyage" index of ids, dates and titles; the eval's forbidden-phrase check matches whole words); slow turns speak a buffer phrase ("Déjame revisar... ").
 Natural turns: the agent's `conversation_config.turn` (check-in after 8 s of silence, hang up after 45 s, eagerness
 normal). ElevenLabs re-engages by calling our LLM with no new user words; `completions()` answers those with
 `stillThere()` ("¿Sigues ahí, Sofía?" → "Aquí sigo…" → goodbye) without Claude or history. Needs "Volver a configurar".

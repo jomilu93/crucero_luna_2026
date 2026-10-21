@@ -55,6 +55,7 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
   const today = shipDate(now);
   const { from, to } = dayBounds(today);
   const todays = await store.listActivities({ from, to });
+  const upcoming = (await store.listActivities({ from: to })).filter((a) => a.status === "published");
   const mine = new Set((await store.listSignupsForPerson(person.id)).filter((s) => s.status !== "out").map((s) => s.activityId));
   const memory = await store.getMemory(person.id);
   const guardian = person.guardianId ? await store.getPerson(person.guardianId) : undefined;
@@ -71,6 +72,9 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
     "",
     `# Today's program (${todays.length} activities; ★ = this passenger is signed up or hosting)`,
     ...(await Promise.all(todays.map(async (a) => `${mine.has(a.id) || a.sponsorId === person.id ? "★ " : "  "}${await describeActivity(store, a, person.language)}`))),
+    "",
+    upcoming.length ? `# Rest of the voyage (index only; use get_program for details)` : "",
+    ...upcoming.map((a) => `${mine.has(a.id) || a.sponsorId === person.id ? "★ " : "  "}[${a.id}] ${shipDate(a.startsAt)} ${a.emoji} ${a.title}`),
     "",
     memory.length ? `# What you remember about ${person.name.split(" ")[0]}` : "",
     ...memory.map((m) => `- ${m.key}: ${m.value}`),

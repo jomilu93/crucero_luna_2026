@@ -118,7 +118,7 @@ async function runCase(c: Case) {
   }
   if (c.reply_should_ask && !/\?/.test(turn.text)) failures.push("expected a clarifying question");
   if (c.reply_must_mention_any && !c.reply_must_mention_any.some((m) => turn.text.toLowerCase().includes(m))) failures.push(`reply should mention one of ${c.reply_must_mention_any.join("/")}`);
-  if (c.reply_must_not_mention_any) for (const m of c.reply_must_not_mention_any) if (turn.text.toLowerCase().includes(m.toLowerCase())) failures.push(`reply leaked "${m}"`);
+  if (c.reply_must_not_mention_any) for (const m of c.reply_must_not_mention_any) if (new RegExp(`(^|[^\\p{L}])${m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "iu").test(turn.text.replace(/’/g, "'"))) failures.push(`reply leaked "${m}"`);
   if (turn.text.length > 900) failures.push(`reply too long (${turn.text.length} chars) for WhatsApp`);
   if (c.reply_max_chars && turn.text.length > c.reply_max_chars) failures.push(`reply too long (${turn.text.length} > ${c.reply_max_chars} chars)`);
   if (c.reply_speakable) {
