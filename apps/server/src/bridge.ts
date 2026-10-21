@@ -4,7 +4,7 @@
  * 16-bit PCM over a WebSocket and the TV feeds it to the avatar as its microphone.
  */
 import { SHIP_NAME } from "@crucero/agent";
-import { GREET_CUE, MAX_CALL_SECONDS } from "./voice.js";
+import { MAX_CALL_SECONDS } from "./voice.js";
 import { esc } from "./web.js";
 
 export const ANAM_SDK = "https://cdn.jsdelivr.net/npm/@anam-ai/js-sdk@4.27.1/+esm";
@@ -118,11 +118,6 @@ const CLOSED = {
   CONNECTION_CLOSED_CODE_SIGNALLING_CLIENT_CONNECTION_FAILURE: S.network,
 };
 /** Tells the server why the call ended, so it shows up in fly logs. */
-/** Once the avatar is really playing, ask the Capitán for his hello (he waits for it instead of talking to nobody). */
-const greet = (c) => setTimeout(() => {
-  if (c !== client) return;
-  try { c.sendUserMessage(${JSON.stringify(GREET_CUE)}); } catch (e) { report("greet failed", "", e.message); }
-}, 400);
 const report = (event, code, details) =>
   fetch(BASE + "/bridge/log", { method: "POST", body: new URLSearchParams({ event, code: code || "", details: details || "" }) }).catch(() => {});
 function closed(code, details) {
@@ -155,8 +150,7 @@ $("call").onclick = async () => {
     client.addListener("CONNECTION_CLOSED", closed);
     client.addListener("SERVER_WARNING", (m) => { report("warning", "", m); say(m); });
     client.addListener("MIC_PERMISSION_DENIED", () => hangup(S.mic));
-    const c = client;
-    client.addListener("VIDEO_PLAY_STARTED", () => { say(""); greet(c); });
+    client.addListener("VIDEO_PLAY_STARTED", () => say(""));
     $("live").style.display = "block";
     await client.streamToVideoElement("cap", mic);
     timer = setTimeout(() => hangup(), ${MAX_CALL_MS});
@@ -255,11 +249,7 @@ function end() {
 const report = (event, code, details) =>
   fetch("/tv/" + KEY + "/log", { method: "POST", body: new URLSearchParams({ event, code: code || "", details: details || "" }) }).catch(() => {});
 async function begin(sessionToken, who, audio) {
-  const c = (client = createClient(sessionToken));
-  c.addListener("VIDEO_PLAY_STARTED", () => setTimeout(() => {
-    if (c !== client) return;
-    try { c.sendUserMessage(${JSON.stringify(GREET_CUE)}); } catch (e) { report("greet failed", "", e.message); }
-  }, 400));
+  client = createClient(sessionToken);
   client.addListener("CONNECTION_CLOSED", (code, details) => { if (!client) return; report("closed", code, details); end(); });
   client.addListener("SERVER_WARNING", (m) => report("warning", "", m));
   $("bridgeWho").textContent = "🔴 " + who;
