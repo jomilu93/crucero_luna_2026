@@ -6,3 +6,4 @@ export { buildMorningBrief, writeMorningMessage, MorningMessage, type MorningBri
 export { ChatService, isAdminPassword, trimHistory, MORNING_BUTTONS, type InboundMessage, type Responder, type MorningPayload } from "./inbound.js";
 export { tick, reminderText, sponsorNudgeText, morningWindowStart, deliverMorningFull, SIGNUP_BUTTON_PREFIX, type SchedulerDeps, type TickReport, type TemplateOutbox, type TemplateKind, type MorningPayloadData } from "./scheduler.js";
 export { buildPersonalCalendar, activityToVEvent } from "./ics.js";
+export { CAPTAIN_NAME, MASCOT_NAME, SHIP_FORMER_NAME, SHIP_NAME, VOYAGE_NAME } from "./brand.js";

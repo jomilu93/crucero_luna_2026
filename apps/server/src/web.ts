@@ -17,7 +17,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { phoneBridgePage } from "./bridge.js";
 import type { VoiceService } from "./voice.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { type FlyerMaker, type Outbox, buildTools, headlineFor } from "@crucero/agent";
+import { CAPTAIN_NAME, type FlyerMaker, type Outbox, SHIP_FORMER_NAME, SHIP_NAME, VOYAGE_NAME, buildTools, headlineFor } from "@crucero/agent";
 import {
   type Activity,
   type Person,
@@ -77,17 +77,17 @@ async function personFromToken(deps: WebDeps, token: string): Promise<Person | u
 const T = {
   es: {
     myCruise: "Mi crucero", program: "Programa", sponsor: "Organizar", today: "Hoy", hosting: "Organizas", mine: "Tu agenda",
-    empty: "Tu camastro se ve solitario. Elige algo del programa o organiza tú.", going: "Van", maybe: "Tal vez", nobody: "nadie todavía",
+    empty: "Manpaty dice clink clink: tu camastro se ve solitario. Elige algo del programa o organiza tú.", going: "Van", maybe: "Tal vez", nobody: "nadie todavía",
     imIn: "¡Voy!", maybeBtn: "Tal vez", out: "No voy", cancelled: "CANCELADA", full: "LLENO", host: "Organiza", bring: "Traer",
     capacity: "Cupo", flyer: "Flyer", makeFlyer: "Hacer flyer", cancel: "Cancelar actividad", reason: "Motivo", calendar: "Agregar a mi calendario",
     settings: "Preferencias", language: "Idioma", humor: "Humor", quiet: "Horas de silencio", wake: "Programa de la mañana a las", mute: "No me mandes mensajes (solo respondo si escribes)",
     save: "Guardar", title: "¿Qué organizas?", emoji: "Emoji", date: "Día", start: "Empieza", end: "Termina", place: "Dónde", description: "Descripción",
-    create: "Publicar actividad", flyerToo: "Hacer flyer con estilo", noFlyer: "Sin flyer por ahora", openChat: "Hablar con el Capitán", back: "Volver",
+    create: "Publicar actividad", flyerToo: "Hacer flyer con estilo", noFlyer: "Sin flyer por ahora", openChat: "Hablar con el Capitán Lunáticus", back: "Volver",
     humorFull: "Completo", humorLight: "Ligero", humorOff: "Sin chistes", saved: "Listo.", working: "El Capitán está en la imprenta…",
     hello: "¡Hola", daysToSail: "días para zarpar", dayToSail: "día para zarpar", dayOf: "Día", of: "de", thanks: "¡Gracias por navegar con nosotros!",
     nextUp: "Lo siguiente para ti", discover: "Descubre a bordo", seeAll: "Ver todo", chat: "Capitán", noneDay: "Nada en el programa este día todavía. ¿Organizas algo?",
     spots: "lugares", spotsLeft: "quedan", youreIn: "Vas", youMaybe: "Tal vez vas", whoGoing: "Quién va", details: "Detalles", hostTools: "Herramientas del anfitrión",
-    newSub: "Publica tu actividad y el Capitán la anuncia a bordo.", when: "Cuándo", extra: "Extras", sail: "Acapulco · 26 dic – 2 ene",
+    newSub: "Publica tu actividad y el Capitán la anuncia a bordo.", when: "Cuándo", extra: "Extras", sail: "Crucero Luna 2026 · Acapulco",
     admin: "Admin", adminTitle: "Puente de mando", running: "El barco navega", paused: "Barco en pausa",
     runningSub: "Mensajes de la mañana, recordatorios y respuestas activos.", pausedSub: "No sale nada proactivo y los pasajeros reciben un aviso de fuera de servicio.",
     pause: "Pausar el barco", resume: "Reanudar", passengers: "Pasajeros", activities: "Actividades", signups: "Inscripciones", tv: "Modo TV",
@@ -103,17 +103,17 @@ const T = {
   },
   en: {
     myCruise: "My cruise", program: "Program", sponsor: "Host", today: "Today", hosting: "You host", mine: "Your plan",
-    empty: "Your deck chair looks lonely. Pick something from the program or host one yourself.", going: "Going", maybe: "Maybe", nobody: "nobody yet",
+    empty: "Manpaty says clink clink: your deck chair looks lonely. Pick something from the program or host one yourself.", going: "Going", maybe: "Maybe", nobody: "nobody yet",
     imIn: "I'm in!", maybeBtn: "Maybe", out: "Not going", cancelled: "CANCELLED", full: "FULL", host: "Host", bring: "Bring",
     capacity: "Capacity", flyer: "Flyer", makeFlyer: "Make a flyer", cancel: "Cancel activity", reason: "Reason", calendar: "Add to my calendar",
     settings: "Settings", language: "Language", humor: "Humor", quiet: "Quiet hours", wake: "Morning program at", mute: "Don't message me (I only reply when you write)",
     save: "Save", title: "What are you hosting?", emoji: "Emoji", date: "Day", start: "Starts", end: "Ends", place: "Where", description: "Description",
-    create: "Publish activity", flyerToo: "Make a flyer in style", noFlyer: "No flyer for now", openChat: "Chat with the Capitán", back: "Back",
+    create: "Publish activity", flyerToo: "Make a flyer in style", noFlyer: "No flyer for now", openChat: "Chat with Capitán Lunáticus", back: "Back",
     humorFull: "Full", humorLight: "Light", humorOff: "No jokes", saved: "Done.", working: "The Capitán is at the print shop…",
     hello: "Hi", daysToSail: "days to sail", dayToSail: "day to sail", dayOf: "Day", of: "of", thanks: "Thanks for sailing with us!",
     nextUp: "Next up for you", discover: "Discover on board", seeAll: "See all", chat: "Capitán", noneDay: "Nothing on the program this day yet. Host something?",
     spots: "spots", spotsLeft: "left", youreIn: "You're in", youMaybe: "Maybe", whoGoing: "Who's going", details: "Details", hostTools: "Host tools",
-    newSub: "Publish your activity and the Capitán announces it on board.", when: "When", extra: "Extras", sail: "Acapulco · Dec 26 – Jan 2",
+    newSub: "Publish your activity and the Capitán announces it on board.", when: "When", extra: "Extras", sail: "Crucero Luna 2026 · Acapulco",
     admin: "Admin", adminTitle: "The Bridge", running: "The ship is sailing", paused: "Ship paused",
     runningSub: "Morning programs, reminders and replies are on.", pausedSub: "Nothing proactive goes out and passengers get an off-duty notice.",
     pause: "Pause the ship", resume: "Resume", passengers: "Passengers", activities: "Activities", signups: "Sign-ups", tv: "TV mode",
@@ -204,6 +204,9 @@ a{color:var(--blue)}.ic{flex:none;vertical-align:-4px}
 main{padding:16px}
 .hero{position:relative;overflow:hidden;border-radius:24px;padding:22px 20px 26px;color:#fff;background:linear-gradient(160deg,#0b2a5b 0%,#0a4d8c 55%,#16a3c9 100%);box-shadow:var(--shadow)}
 .hero:after{content:"";position:absolute;left:0;right:0;bottom:0;height:46px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 46' preserveAspectRatio='none'%3E%3Cpath d='M0 22c50-18 100-18 150 0s100 18 150 0 70-14 100-6v30H0z' fill='%23ffffff' fill-opacity='.14'/%3E%3Cpath d='M0 32c60-14 110-12 170 2s120 12 170-2 45-8 60-4v18H0z' fill='%23ffffff' fill-opacity='.18'/%3E%3C/svg%3E") center/100% 100% no-repeat}
+.hero .manpaty{position:absolute;right:12px;bottom:-6px;width:86px;z-index:1;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))}
+.hero.has-mp>:not(.manpaty):not(.moon){margin-right:86px}.hero.has-mp .moon{right:auto;left:62%;top:14px;width:40px;height:40px;opacity:.85}.formerly{font-size:12px;opacity:.7;margin-top:2px;font-style:italic}
+.empty img.mp{width:84px;display:block;margin:0 auto 6px}
 .hero .moon{position:absolute;right:22px;top:20px;width:58px;height:58px;border-radius:50%;background:radial-gradient(circle at 38% 38%,#fffaf0,#ffe7a3 55%,#f2b632);box-shadow:0 0 0 10px rgba(255,231,163,.10),0 0 0 22px rgba(255,231,163,.06),0 0 40px rgba(242,182,50,.55)}
 .hero .eyebrow{font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.8;font-weight:700}
 .hero h1{margin:6px 0 4px;font-size:28px;line-height:1.15}.hero .big{font-size:44px;font-weight:800;line-height:1;margin-top:14px}
@@ -295,11 +298,11 @@ function page(
     : "";
   const top = opts.bare
     ? ""
-    : `<header class="top"><a class="logo" href="${base || "#"}"><span class="moon"></span><span>CRUCERO LUNA<small>${esc(s.sail)}</small></span></a>${
+    : `<header class="top"><a class="logo" href="${base || "#"}"><span class="moon"></span><span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(s.sail)}</small></span></a>${
         opts.bot ? `<a class="pill" href="https://t.me/${esc(opts.bot)}" aria-label="${esc(s.openChat)}">${icon("chat", 16)} ${esc(s.chat)}</a>` : ""
       }</header>`;
   return `<!doctype html><html lang="${opts.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1f3f"><title>${esc(title)} · Crucero Luna 2026</title>
+<meta name="theme-color" content="#0b1f3f"><title>${esc(title)} · ${esc(SHIP_NAME)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>${CSS}</style></head><body><div class="app">${top}
@@ -519,7 +522,7 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
           })()
         : dayIdx >= 0
           ? `<div class="eyebrow">${s.dayOf} ${dayIdx + 1} ${s.of} ${days.length}</div><h1>${s.hello}, ${esc(first)}! 🌙</h1><div class="sub cap">${esc(prettyDate(today, lang))}</div>${headline ? `<div class="headline">${esc(headline)}</div>` : ""}`
-          : `<div class="eyebrow">Crucero Luna 2026</div><h1>${s.hello}, ${esc(first)}! 🌙</h1><div class="sub">${s.thanks}</div>`;
+          : `<div class="eyebrow">${esc(VOYAGE_NAME)}</div><h1>${s.hello}, ${esc(first)}! 🌙</h1><div class="sub">${s.thanks}</div>`;
 
     const signups = (await deps.store.listSignupsForPerson(viewer.id)).filter((x) => x.status !== "out");
     const ids = new Set(signups.map((x) => x.activityId));
@@ -545,7 +548,7 @@ ${bot ? `<a href="https://t.me/${esc(bot)}"><span class="q">${icon("chat", 24)}<
       ? rest.length
         ? `<h2 class="sec">${s.mine}<a href="/c/${esc(token)}/program">${s.seeAll}</a></h2><div class="card list">${(await Promise.all(rest.map((a) => activityRow(deps, a, viewer, token, s, true)))).join("")}</div>`
         : ""
-      : `<h2 class="sec">${s.mine}</h2><div class="card empty"><div class="e">🏖️</div>${s.empty}<div class="actions" style="justify-content:center"><a class="btn" href="/c/${esc(token)}/program">${s.program}</a><a class="btn alt" href="/c/${esc(token)}/new">${s.sponsor}</a></div></div>`;
+      : `<h2 class="sec">${s.mine}</h2><div class="card empty"><img class="mp" src="/manpaty.svg" alt="Manpaty">${s.empty}<div class="actions" style="justify-content:center"><a class="btn" href="/c/${esc(token)}/program">${s.program}</a><a class="btn alt" href="/c/${esc(token)}/new">${s.sponsor}</a></div></div>`;
     const tiles = discover.length
       ? `<h2 class="sec">${s.discover}<a href="/c/${esc(token)}/program">${s.seeAll}</a></h2><div class="carousel">${(
           await Promise.all(
@@ -568,7 +571,7 @@ ${bot ? `<a href="https://t.me/${esc(bot)}"><span class="q">${icon("chat", 24)}<
 <div class="actions"><button>${s.save}</button></div></form></div></details>
 <div class="card list"><a class="item" href="${esc(deps.publicUrl)}/cal/${esc(viewer.icsToken)}.ics">${icon("calendar")}<div class="grow"><div class="tt">${s.calendar}</div><div class="m">.ics · iPhone / Google</div></div>${icon("chevron", 18, "ic go")}</a></div>`;
 
-    html(res, 200, page(s.myCruise, `<section class="hero"><div class="moon"></div>${hero}</section>${quick}${callCard}${nextBlock}${plan}${tiles}<div style="height:12px"></div>${settings}`, opts("")));
+    html(res, 200, page(s.myCruise, `<section class="hero has-mp"><div class="moon"></div><img class="manpaty" src="/manpaty.svg${sailMs > 0 || dayIdx < 0 ? "" : "?pose=cheer"}" alt="Manpaty">${hero}<div class="formerly">${esc(SHIP_NAME)} · ${lang === "es" ? "anteriormente" : "formerly"} ${esc(SHIP_FORMER_NAME)}</div></section>${quick}${callCard}${nextBlock}${plan}${tiles}<div style="height:12px"></div>${settings}`, opts("")));
     return true;
   }
 
@@ -601,7 +604,7 @@ ${bot ? `<a href="https://t.me/${esc(bot)}"><span class="q">${icon("chat", 24)}<
             }),
           )
         ).join("")}</div>`
-      : `<div class="card empty"><div class="e">🛟</div>${s.noneDay}<div class="actions" style="justify-content:center"><a class="btn" href="/c/${esc(token)}/new">${s.sponsor}</a></div></div>`;
+      : `<div class="card empty"><img class="mp" src="/manpaty.svg" alt="Manpaty">${s.noneDay}<div class="actions" style="justify-content:center"><a class="btn" href="/c/${esc(token)}/new">${s.sponsor}</a></div></div>`;
     html(res, 200, page(s.program, `${chips}${head}${timeline}`, opts("/program")));
     return true;
   }

@@ -23,7 +23,7 @@ export function privacyPolicyHtml(contact?: string): string {
 <body>
 <h1>Aviso de privacidad · Crucero Luna 2026</h1>
 <p><small>Vigente desde el 19 de octubre de 2026</small></p>
-<p>El <strong>Capitán Lunático</strong> es un asistente de chat (Telegram o WhatsApp) para un viaje familiar privado de La Familia Luna
+<p>El <strong>Capitán Lunáticus</strong> es un asistente de chat (Telegram o WhatsApp) para un viaje familiar privado de La Familia Luna
 (Acapulco, 26 de diciembre de 2026 al 2 de enero de 2027). Solo lo usan los invitados al viaje. No es un servicio comercial.</p>
 
 <h2>Qué datos usamos</h2>
@@ -59,7 +59,7 @@ No vendemos tus datos, no los usamos para publicidad y no los compartimos con na
 <h1 lang="en">Privacy policy · Crucero Luna 2026</h1>
 <div lang="en">
 <p><small>Effective October 19, 2026</small></p>
-<p><strong>Capitán Lunático</strong> is a chat assistant (Telegram or WhatsApp) for La Familia Luna's private family trip
+<p><strong>Capitán Lunáticus</strong> is a chat assistant (Telegram or WhatsApp) for La Familia Luna's private family trip
 (Acapulco, December 26, 2026 to January 2, 2027). Only invited guests use it. It is not a commercial service.</p>
 
 <h2>What we use</h2>

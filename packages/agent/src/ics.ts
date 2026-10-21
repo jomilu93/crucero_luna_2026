@@ -66,7 +66,7 @@ export async function buildPersonalCalendar(store: Store, person: Person): Promi
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Crucero Luna 2026//Capitan Lunatico//ES",
+    "PRODID:-//Crucero Luna 2026//Capitan Lunaticus//ES",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     `X-WR-CALNAME:${esc(person.language === "es" ? "Crucero Luna 2026 · Mi programa" : "Crucero Luna 2026 · My program")}`,

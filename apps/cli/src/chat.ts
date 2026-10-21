@@ -1,5 +1,5 @@
 /**
- * Chat with Capitán Lunático from the terminal, as any passenger, at any ship time.
+ * Chat with Capitán Lunáticus from the terminal, as any passenger, at any ship time.
  *
  *   pnpm chat                                  # as the first passenger, now
  *   pnpm chat --as sofia --at 2026-12-28T13:00  # as Sofía, on Inocentes at 7:00 am ship time
@@ -10,7 +10,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { Director } from "@crucero/agent";
+import { CAPTAIN_NAME, Director, SHIP_NAME } from "@crucero/agent";
 import { consoleOutbox, describePerson, openStore, parseArgs } from "./shared.js";
 
 const args = parseArgs(process.argv.slice(2));
@@ -27,7 +27,7 @@ const director = new Director(store, { outbox: consoleOutbox, now });
 let history: BetaMessageParam[] = [];
 let trace = Boolean(args.trace);
 
-console.log(`🚢 Crucero Luna 2026 · Capitán Lunático (${director.model}, effort ${director.effort})`);
+console.log(`🚢 ${SHIP_NAME} · ${CAPTAIN_NAME} (${director.model}, effort ${director.effort})`);
 console.log(`   Passenger: ${describePerson(passenger)} · ship time ${now().toISOString()}`);
 console.log(`   Commands: /who <name|id> · /tools · /reset · /program · /quit\n`);
 

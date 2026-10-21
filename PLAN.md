@@ -14,7 +14,7 @@ charismatic Cruise Director agent that hypes everyone up each morning and keeps 
 | Feature freeze (Christmas week is not debugging week) | Dec 19 |
 | **The cruise: Acapulco, Dec 26 – Jan 2** (8 days, 7 nights) | Dec 26 – Jan 2 |
 
-**Director:** *Capitán Lunático*, at the service of La Familia Luna (~20 passengers).
+**Director:** *Capitán Lunáticus*, at the service of La Familia Luna (~20 passengers).
 **Language:** Spanish first; the Capitán switches to English for anyone who writes in English.
 
 ---
@@ -62,7 +62,7 @@ however, the piece that makes this feel like a cruise-room TV, so it stays in sc
 
 ### 2.3 The personality
 
-**Capitán Lunático**, Cruise Director of the Crucero Luna, serving La Familia Luna (the
+**Capitán Lunáticus**, Cruise Director of the Crucero Luna, serving La Familia Luna (the
 name is the first running gag: he is lunatic about the Luna family). Bilingual Spanish/English, mirrors whoever is talking. Running gags:
 the apartment is "the ship" (balcony = Lido Deck, kitchen = Galley, the elevator = "the
 tender"), fake ship announcements ("*ding-dong* Attention passengers…"), ranks awarded for
@@ -233,8 +233,8 @@ control through Jan 2. Pick for reliability of receiving codes, nothing else.
 | A Mexican (+52) number via Twilio | regulatory bundle | **Skip.** Requires identity plus Mexican address proof per Twilio's Mexico rules, and Mexican mobile numbers are barred from automated messaging. Zero benefit for WhatsApp delivery. |
 
 **Display name.** Meta reviews the WhatsApp display name against the business portfolio name.
-Name the portfolio "Crucero Luna" and use "Crucero Luna" (or "Capitán Lunático · Crucero
-Luna") as the display name; everyone saves the contact as Capitán Lunático on their own phone
+Name the portfolio "Crucero Luna" and use "Crucero Luna" (or "Capitán Lunáticus · Crucero
+Luna") as the display name; everyone saves the contact as Capitán Lunáticus on their own phone
 anyway. A rejected display name caps the number at 250 business-initiated messages per day,
 which would still be fine for 20 people, but avoid the hassle.
 
@@ -250,7 +250,7 @@ number recently deleted from WhatsApp can trigger a cooldown of up to 24 hours.
 ## 4. Phased plan
 
 ### Phase 0 — Decisions & accounts (this week, Oct 17–24)
-- [x] Director's name (Capitán Lunático) and trip dates (Dec 26 – Jan 2). Still open:
+- [x] Director's name (Capitán Lunáticus) and trip dates (Dec 26 – Jan 2). Still open:
       language default, apartment "deck map".
 - [x] Phone number bought (Twilio US local; reusable as the Meta number once any Twilio WhatsApp sender registration on it is removed).
 - [ ] Meta for Developers app + Business portfolio "Crucero Luna"; test number working with 5 pilot phones; System User permanent token; real number added; the three templates submitted (`morning_knock` with 3 quick-reply buttons, `activity_reminder`, `new_activity`).

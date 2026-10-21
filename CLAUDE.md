@@ -4,7 +4,7 @@ Read `PLAN.md` (the plan and decisions) and `README.md` (how to run things) befo
 This file is the hand-off: where the project stands and what comes next.
 
 ## What this is
-Capitán Lunático, a WhatsApp cruise-director agent for La Familia Luna's apartment "cruise" in
+Capitán Lunáticus, a WhatsApp cruise-director agent for La Familia Luna's apartment "cruise" in
 Acapulco, **Dec 26 2026 – Jan 2 2027**, ~20 passengers. Spanish first, English mirrored.
 Family members sponsor activities, sign up for each other's, and get a hyped morning program,
 reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.ts` (+ `docs/persona.md`).
@@ -23,13 +23,13 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (121 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (129 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
 
 ## Status (2026-10-19)
-Done: plan, persona, db (+ Postgres schema), agent + 14 tools, CLI harness, morning generator, 40-case eval,
+Done: plan, persona, db (+ Postgres schema), agent + 14 tools, CLI harness, morning generator, eval (40 cases, 51 since the creative pass),
 ChatService (onboarding, history), scheduler (`tick`), ICS feeds, Meta + Twilio adapters, HTTP server,
 Dockerfile + fly.toml, CI.
 Live eval (CI `live-eval`, judge on): run 1 15/40 (judge schema crashes), run 2 32/40 after harness fixes and
@@ -60,6 +60,15 @@ phone→TV mic relay over `ws`), `bridge.ts` (phone call page, TV overlay; Anam 
 tried against the real vendors: needs `ELEVENLABS_API_KEY` + `ANAM_API_KEY` on Fly and the Admin-tab setup.
 Live eval on this build (persona: check the host before cancelling, reply in the passenger's language): **39/40**,
 the one left a two-gag tone call.
+
+**Creative pass (2026-10-20, owner's choices):** the ship is the **Moonshine of the Seas** (anteriormente *Fondo de Cristal
+Victoria*), the captain is **Capitán Lunáticus** (Greek), and the mascot **la Primera Oficial Manpaty** (she/her; cheeky secretary) is the old yellow
+ceramic celosía entrance screen with a brass frame, drawn as SVG in `apps/server/src/manpaty.ts`. Names live in
+`packages/agent/src/brand.ts`. New passengers get a Manpaty welcome photo (`welcomePhotoUrl`).
+The eval now has 51 cases: the original 40 plus admin (remove asks first, pause, kid/guardian, no admin talk
+with non-admins), voice calls (spoken, short, no emoji/links), the shared TV seat (asks who is speaking), the
+ship/captain names, Manpaty (she/her) and new-passenger onboarding. Harness: `as: "tv"|"new"`, `channel: "voice"`,
+`setup.admin`, `setup.add_passengers`, `reply_speakable`, `reply_max_chars`.
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;

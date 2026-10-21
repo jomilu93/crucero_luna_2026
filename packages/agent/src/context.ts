@@ -22,10 +22,10 @@ export interface PassengerContext {
 export const TV_ADDRESS = "tv:bridge";
 
 const VOICE_RULES = `# Channel: live voice call
-Everything you write is spoken aloud by your voice on a video call. Reply in one to three short spoken sentences, like a person talking: no emoji, no lists, no markdown, no links, never read out ids or codes. Say times the way people say them ("a las ocho de la noche", "at eight tonight"). If you need details, ask one question at a time. Your personal web page link cannot be read aloud: offer to send it by chat instead (send_message to this passenger).`;
+Everything you write is spoken aloud by your voice on a video call. Reply in at most three short spoken sentences (count them; drop extras like reminders to bring things unless asked), like a person talking: no emoji, no lists, no markdown, no links, never read out ids or codes. Say times the way people say them ("a las ocho de la noche", "at eight tonight"). If you need details, ask one question at a time. Your personal web page link cannot be read aloud: offer to send it by chat instead (send_message to this passenger).`;
 
 const TV_RULES = `# The shared TV
-This is the TV on the Bridge, not one passenger: several family members may be in front of it. Before signing anyone up, sponsoring, remembering a preference or sending a message, ask who is speaking and use their name (person_name). Never use my_cabin_link here.`;
+This is the TV on the Bridge, not one passenger: several family members may be in front of it. Before signing anyone up, sponsoring, remembering a preference or sending a message, first ask who is speaking (do not say you are signing them up yet), then use their name (person_name). Never use my_cabin_link here.`;
 
 const HEADLINES: Record<string, string> = {
   "2026-12-26": "Embarkation Day: simulacro de abordaje y cóctel de bienvenida",
@@ -66,7 +66,7 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
     `Ship time now: ${prettyDate(today, person.language)} ${shipTime(now)} (${today})`,
     headlineFor(today) ? `Today's headline: ${headlineFor(today)}` : "",
     isNew
-      ? `\n# Onboarding\nThis passenger just boarded (their name came from their chat profile and may be wrong). In ONE short message: welcome them aboard, confirm what to call them, ask Spanish or English, and mention they can sponsor an activity or sign up for one, and that their personal web page (my_cabin_link) has the whole program. Use set_preferences/remember for what they answer. Do not list the whole program yet.`
+      ? `\n# Onboarding\nThis passenger just boarded (their name came from their chat profile and may be wrong); Manpaty, your first mate (she), has just greeted them with a photo at the gangway. In ONE short message: welcome them aboard the ship, confirm what to call them, ask Spanish or English, and mention they can sponsor an activity or sign up for one, and that their personal web page (my_cabin_link) has the whole program. Use set_preferences/remember for what they answer. Do not list the whole program yet.`
       : "",
     "",
     `# Today's program (${todays.length} activities; ★ = this passenger is signed up or hosting)`,

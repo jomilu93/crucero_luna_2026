@@ -19,7 +19,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
-import { type ChatService, TV_ADDRESS } from "@crucero/agent";
+import { CAPTAIN_NAME, type ChatService, SHIP_NAME, TV_ADDRESS } from "@crucero/agent";
 import { type Person, type Store, isPaused } from "@crucero/db";
 import { WebSocket, WebSocketServer } from "ws";
 import type { ImageGenerator } from "./flyer.js";
@@ -75,7 +75,7 @@ export const DEFAULT_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
 const TTS_MODEL = "eleven_flash_v2_5";
 const SESSION_TTL_MS = 2 * 3600 * 1000;
 const PORTRAIT_PROMPT =
-  "Photorealistic head-and-shoulders portrait of a cheerful, charismatic Mexican cruise ship captain in his late fifties, warm smile, salt-and-pepper beard, crisp white captain's uniform with gold epaulettes and a white captain's hat with a golden moon emblem, looking straight at the camera, face centered and fully visible, soft natural light, blurred background of a sunny Acapulco bay seen from a ship's bridge, shallow depth of field, 85mm photo";
+  "Photorealistic head-and-shoulders portrait of a cheerful, charismatic Greek cruise ship captain in his late fifties, Mediterranean features, warm smile, thick silver beard and bushy eyebrows, crisp white captain's uniform with gold epaulettes and a white captain's hat with a golden moon emblem, looking straight at the camera, face centered and fully visible, soft natural light, blurred background of a sunny Acapulco bay seen from a ship's bridge, shallow depth of field, 85mm photo";
 
 const hmac = (secret: string, data: string, len = 32) => createHmac("sha256", secret).update(data).digest("base64url").slice(0, len);
 const safeEqual = (a: string, b: string) => {
@@ -182,7 +182,7 @@ export class VoiceService {
     const res = await this.fetchFn("https://api.anam.ai/v1/avatars", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ displayName: "Capitán Lunático", imageUrl }),
+      body: JSON.stringify({ displayName: CAPTAIN_NAME, imageUrl }),
     });
     const body = await res.text();
     if (!res.ok) throw new Error(`Anam avatar ${res.status}: ${body.slice(0, 200)}`);
@@ -204,16 +204,16 @@ export class VoiceService {
   /** The ElevenLabs agent config: our server is its brain, ElevenLabs only listens and speaks. */
   agentConfig(secretId: string, voiceId: string) {
     return {
-      name: "Capitán Lunático",
+      name: CAPTAIN_NAME,
       conversation_config: {
         agent: {
-          first_message: "¡Ahoy! Aquí el Capitán Lunático desde el Puente. ¿En qué te ayudo?",
+          first_message: `¡Yiá sas! Aquí el ${CAPTAIN_NAME} desde el Puente del ${SHIP_NAME}. ¿En qué te ayudo?`,
           dynamic_variables: { dynamic_variable_placeholders: { cl_session: "none" } },
           language: "es",
           prompt: {
             // {{cl_session}} is filled per call (dynamic variables need no override permission) and reaches
             // our endpoint inside the system message: the backup way to know who is calling.
-            prompt: "You are Capitán Lunático. Your replies come from the ship's own server. [session:{{cl_session}}]",
+            prompt: `You are ${CAPTAIN_NAME}. Your replies come from the ship's own server. [session:{{cl_session}}]`,
             llm: "custom-llm",
             custom_llm: { url: `${this.deps.publicUrl}/v1/chat/completions`, model_id: "capitan-lunatico", api_key: { secret_id: secretId } },
           },
@@ -284,8 +284,8 @@ export class VoiceService {
     const session = this.sessionFor(person);
     const greeting =
       person.language === "en"
-        ? `Ahoy${first ? `, ${first}` : ""}! Capitán Lunático here, on the Bridge. What can I do for you?`
-        : `¡Ahoy${first ? `, ${first}` : ""}! Aquí el Capitán Lunático desde el Puente. ¿En qué te ayudo?`;
+        ? `Yiá sas${first ? `, ${first}` : ""}! ${CAPTAIN_NAME} here, on the Bridge of the ${SHIP_NAME}. What can I do for you?`
+        : `¡Yiá sas${first ? `, ${first}` : ""}! Aquí el ${CAPTAIN_NAME} desde el Puente del ${SHIP_NAME}. ¿En qué te ayudo?`;
     const res = await this.fetchFn("https://api.anam.ai/v1/auth/session-token", {
       method: "POST",
       headers: { Authorization: `Bearer ${this.deps.cfg.anamKey}`, "Content-Type": "application/json" },

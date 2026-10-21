@@ -1,6 +1,6 @@
 # Crucero Luna 2026 🚢
 
-**Capitán Lunático** is the Cruise Director agent for La Familia Luna's "cruise" in Acapulco,
+**Capitán Lunáticus** is the Cruise Director agent for La Familia Luna's "cruise" in Acapulco,
 Dec 26 2026 – Jan 2 2027 (which is, technically, an apartment; the Capitán disagrees).
 Family members sponsor activities, sign up for each other's, and get a hyped-up morning program
 and reminders from a charismatic, slightly unhinged ship's officer.
@@ -76,7 +76,7 @@ pnpm server                                    # webhook + calendar feeds + sche
 
 WhatsApp is parked (see Troubleshooting below); Telegram needs no phone number, business verification or templates.
 
-1. In Telegram, message **@BotFather** → `/newbot`, pick a name ("Capitán Lunático") and a username ending in `bot`.
+1. In Telegram, message **@BotFather** → `/newbot`, pick a name ("Capitán Lunáticus") and a username ending in `bot`.
    Copy the token. Optional: `/setuserpic`, `/setdescription`, and `/setjoingroups` → Disable (the bot only talks in
    private chats anyway).
 2. Add the token as the `TELEGRAM_BOT_TOKEN` repository secret and run **Deploy to Fly**. On boot the server calls
