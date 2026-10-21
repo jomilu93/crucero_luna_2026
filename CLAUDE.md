@@ -23,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (137 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (141 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -77,6 +77,11 @@ counted in the voice rules; next run 47/56: flyer-request could not find a later
 Natural turns: the agent's `conversation_config.turn` (check-in after 8 s of silence, hang up after 45 s, eagerness
 normal). ElevenLabs re-engages by calling our LLM with no new user words; `completions()` answers those with
 `stillThere()` ("¿Sigues ahí, Sofía?" → "Aquí sigo…" → goodbye) without Claude or history. Needs "Volver a configurar".
+Fillers (owner's pilot feedback 2026-10-21: "Déjame revisar" after everything, then "¿Sigues ahí?" while *he* was
+checking): a filler is spoken only when a tool starts (`onToolStart`) or after 3.5 s, rotating 4 phrasings
+(`FILLERS`). A re-engage request that arrives while a turn is still in flight joins it (`inflight`) and speaks its
+answer; a filler is never counted as the caller going quiet. The custom LLM answers at any `/chat/completions` path
+(ElevenLabs appends it to the agent URL) and Diagnosticar logs every hit.
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;

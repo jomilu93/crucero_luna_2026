@@ -10,7 +10,7 @@ export interface Responder {
     passenger: Person,
     text: string,
     history: BetaMessageParam[],
-    opts?: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice" },
+    opts?: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice"; onToolStart?: (name: string) => void },
   ): Promise<{ text: string; history: BetaMessageParam[] }>;
 }
 
@@ -212,13 +212,13 @@ export class ChatService {
     person: Person,
     text: string,
     channel: "whatsapp" | "telegram" | "web" | "voice",
-    opts: { keep?: () => boolean } = {},
+    opts: { keep?: () => boolean; onToolStart?: (name: string) => void } = {},
   ): Promise<string> {
     if (!person.admin && (await isPaused(this.store))) return OFF_DUTY[person.language];
     const saved = await this.store.getConversation(person.id);
     const stale = !saved || this.now().getTime() - new Date(saved.updatedAt).getTime() > this.staleAfterMs;
     const history = stale ? [] : trimHistory(saved!.history as BetaMessageParam[], this.maxHistory);
-    const turn = await this.responder.respond(person, text, history, { channel });
+    const turn = await this.responder.respond(person, text, history, { channel, onToolStart: opts.onToolStart });
     // A voice turn the caller talked over was never heard: keep it out of the shared history, unless it already
     // did something (signed someone up, sent a message…), which the Capitán must remember.
     if (opts.keep && !opts.keep() && !didSomething(turn.history.slice(history.length))) return turn.text;

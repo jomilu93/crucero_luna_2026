@@ -380,3 +380,99 @@ describe("a dynamic conversation", () => {
     expect(await ask([hi, { role: "user", content: "¿qué hay hoy?" }])).toContain("Bingo");
   });
 });
+
+describe("fillers and check-ins that respect a turn in progress", () => {
+  const liveRes = () => {
+    let raw = "";
+    const handlers: Record<string, (() => void)[]> = {};
+    const res = {
+      destroyed: false,
+      writableFinished: false,
+      on: (ev: string, fn: () => void) => ((handlers[ev] ??= []).push(fn), res),
+      writeHead: () => res,
+      write: (s: string) => ((raw += s), true),
+      end: (s: string) => ((raw += s), (res.writableFinished = true)),
+    };
+    const text = () => raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "").join("");
+    const hangUp = () => {
+      res.destroyed = true;
+      for (const fn of handlers.close ?? []) fn();
+    };
+    return { res: res as never, text, hangUp };
+  };
+  const build = (opts: { delayMs: number; tool?: boolean; bufferAfterMs?: number }) => {
+    const store = new MemoryStore({ now: () => NOW });
+    seedSample(store);
+    const responder: Responder = {
+      respond: async (_p, text, history, o) => {
+        if (opts.tool) o?.onToolStart?.("get_program");
+        await new Promise((r) => setTimeout(r, opts.delayMs));
+        return { text: "El bingo es a las ocho.", history: [...history, { role: "user", content: text }, { role: "assistant", content: [{ type: "text", text: "El bingo es a las ocho." }] }] };
+      },
+    };
+    const chat = new ChatService(store, responder, { send: async () => {}, sendTemplate: async () => {} }, { now: () => NOW });
+    const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: {}, now: () => NOW, bufferAfterMs: opts.bufferAfterMs });
+    return { store, voice };
+  };
+  const req = (voice: VoiceService) => ({ headers: { authorization: `Bearer ${voice.llmSecret()}` } }) as never;
+
+  it("says no filler on a quick answer, one when a lookup starts, and rotates the wording", async () => {
+    const quick = build({ delayMs: 10 });
+    const sofia = (await quick.store.getPerson("sofia"))!;
+    const a = liveRes();
+    await quick.voice.completions(req(quick.voice), a.res, JSON.stringify({ messages: [{ role: "user", content: "hola" }], user_id: quick.voice.sessionFor(sofia) }));
+    expect(a.text()).toBe("El bingo es a las ocho.");
+
+    const lookup = build({ delayMs: 30, tool: true, bufferAfterMs: 60_000 });
+    const ask = async () => {
+      const r = liveRes();
+      await lookup.voice.completions(req(lookup.voice), r.res, JSON.stringify({ messages: [{ role: "user", content: "¿a qué hora es el bingo?" }], user_id: lookup.voice.sessionFor(sofia) }));
+      return r.text();
+    };
+    const first = await ask();
+    const second = await ask();
+    expect(first).toBe("Déjame revisar... El bingo es a las ocho.");
+    expect(second).toBe("A ver, un segundo... El bingo es a las ocho.");
+  });
+
+  it("answers the pending question when ElevenLabs re-engages during a lookup, instead of asking if you're still there", async () => {
+    const { store, voice } = build({ delayMs: 150, tool: true, bufferAfterMs: 60_000 });
+    const sofia = (await store.getPerson("sofia"))!;
+    const q = { role: "user", content: "¿a qué hora es el bingo?" };
+    const a = liveRes();
+    const working = voice.completions(req(voice), a.res, JSON.stringify({ messages: [q], user_id: voice.sessionFor(sofia) }));
+    await new Promise((r) => setTimeout(r, 40));
+    expect(a.text()).toBe("Déjame revisar... ");
+    a.hangUp(); // ElevenLabs's turn timeout: it drops this request and asks again with the filler as our last line
+    const b = liveRes();
+    await voice.completions(req(voice), b.res, JSON.stringify({ messages: [q, { role: "assistant", content: "Déjame revisar..." }], user_id: voice.sessionFor(sofia) }));
+    await working;
+    expect(b.text()).toBe("El bingo es a las ocho.");
+    expect(b.text()).not.toContain("Sigues");
+    expect((await store.getConversation("sofia"))?.history.length).toBe(2); // heard after all, so remembered
+  });
+
+  it("keeps an answer that finished while nobody was listening for the next request", async () => {
+    const { store, voice } = build({ delayMs: 20 });
+    const sofia = (await store.getPerson("sofia"))!;
+    const q = { role: "user", content: "¿a qué hora es el bingo?" };
+    const a = liveRes();
+    const working = voice.completions(req(voice), a.res, JSON.stringify({ messages: [q], user_id: voice.sessionFor(sofia) }));
+    a.hangUp();
+    await working;
+    const b = liveRes();
+    await voice.completions(req(voice), b.res, JSON.stringify({ messages: [q, { role: "assistant", content: "Ahorita te digo..." }], user_id: voice.sessionFor(sofia) }));
+    expect(b.text()).toBe("El bingo es a las ocho.");
+  });
+
+  it("asks to repeat, not whether you're there, when the turn behind a filler is gone", async () => {
+    const { store, voice } = build({ delayMs: 0 });
+    const sofia = (await store.getPerson("sofia"))!;
+    const b = liveRes();
+    await voice.completions(req(voice), b.res, JSON.stringify({ messages: [{ role: "user", content: "x" }, { role: "assistant", content: "Mmm, déjame ver... " }], user_id: voice.sessionFor(sofia) }));
+    expect(b.text()).toBe("Perdón, se cortó la señal un segundo. ¿Me lo repites?");
+    const c = liveRes();
+    await voice.completions(req(voice), c.res, JSON.stringify({ messages: [{ role: "user", content: "x" }, { role: "assistant", content: "Mmm, déjame ver... " }, { role: "assistant", content: "El bingo es a las ocho." }], user_id: voice.sessionFor(sofia) }));
+    expect(c.text()).toBe("¿Sigues ahí, Sofía?");
+  });
+});
