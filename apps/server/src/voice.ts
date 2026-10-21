@@ -46,6 +46,8 @@ export interface VoiceDeps {
   fetch?: typeof fetch;
   log?: (line: string) => void;
   now?: () => Date;
+  /** A slow turn first streams a short buffer phrase after this long, so ElevenLabs hears something. Default 1200 ms. */
+  bufferAfterMs?: number;
 }
 
 export interface VoiceStatus {
@@ -413,20 +415,24 @@ export class VoiceService {
     const chunk = (delta: Record<string, string>, finish: string | null = null) =>
       `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model: "capitan-lunatico", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-    res.write(chunk({ role: "assistant" }));
-    const ping = setInterval(() => res.write(": thinking\n\n"), 2000); // keeps proxies from closing a slow turn
+    res.write(chunk({ role: "assistant", content: "" }));
 
+    const started = Date.now();
+    const en = person?.language === "en";
+    // A turn with tool calls can take several seconds; ElevenLabs gives up on a custom LLM that stays silent, so a
+    // slow turn first speaks a buffer phrase. Their docs: end it with "... " so the real answer doesn't run into it.
+    const buffer = setTimeout(() => res.write(chunk({ content: en ? "Let me check... " : "Déjame revisar... " })), this.deps.bufferAfterMs ?? 1200);
     let reply: string;
     try {
       if (!person) reply = "Perdón, se cortó la señal del Puente. Vuelve a llamar desde tu página, por favor.";
-      else if (!text.trim()) reply = person.language === "en" ? "I'm listening." : "Te escucho.";
-      else reply = speakable(await this.deps.chat.converse(person, text, "voice")) || (person.language === "en" ? "Aye aye!" : "¡A la orden!");
-      if (person) this.log(`voice ${person.name}: ${text.slice(0, 60)} → ${reply.slice(0, 80)}`);
+      else if (!text.trim()) reply = en ? "I'm listening." : "Te escucho.";
+      else reply = speakable(await this.deps.chat.converse(person, text, "voice")) || (en ? "Aye aye!" : "¡A la orden!");
+      if (person) this.note(`${person.name} (${((Date.now() - started) / 1000).toFixed(1)} s): ${text.slice(0, 50)} → ${reply.slice(0, 70)}`);
     } catch (err) {
-      this.log(`voice ERROR ${err instanceof Error ? err.message : err}`);
-      reply = person?.language === "en" ? "Rough seas on the line, give me a moment and ask again." : "Hay oleaje en la línea; dame un momento y vuelve a preguntar.";
+      this.note(`custom LLM ERROR after ${((Date.now() - started) / 1000).toFixed(1)} s: ${err instanceof Error ? err.message : err}`);
+      reply = en ? "Rough seas on the line, give me a moment and ask again." : "Hay oleaje en la línea; dame un momento y vuelve a preguntar.";
     } finally {
-      clearInterval(ping);
+      clearTimeout(buffer);
     }
     for (const s of sentences(reply)) res.write(chunk({ content: s }));
     res.write(chunk({}, "stop"));

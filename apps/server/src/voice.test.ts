@@ -36,17 +36,17 @@ function fakeVendors() {
   return { calls, fetchFn };
 }
 
-function setup() {
+function setup(opts: { delayMs?: number; bufferAfterMs?: number } = {}) {
   const store = new MemoryStore({ now: () => NOW });
   seedSample(store);
   const heard: { name: string; text: string; channel?: string }[] = [];
   const responder: Responder = {
-    respond: async (p, text, history, opts) => (heard.push({ name: p.name, text, channel: opts?.channel }), { text: "¡A la orden! 🎱 Bingo a las **8:00 pm** [a04]. Más aquí: https://x.y/z", history: [...history, { role: "user", content: text }] }),
+    respond: async (p, text, history, o) => (await new Promise((r) => setTimeout(r, opts.delayMs ?? 0)), heard.push({ name: p.name, text, channel: o?.channel }), { text: "¡A la orden! 🎱 Bingo a las **8:00 pm** [a04]. Más aquí: https://x.y/z", history: [...history, { role: "user", content: text }] }),
   };
   const outbox = { send: async () => {}, sendTemplate: async () => {} };
   const chat = new ChatService(store, responder, outbox, { now: () => NOW });
   const vendors = fakeVendors();
-  const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: { elevenLabsKey: "xi", anamKey: "an" }, fetch: vendors.fetchFn, now: () => NOW });
+  const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: { elevenLabsKey: "xi", anamKey: "an" }, fetch: vendors.fetchFn, now: () => NOW, bufferAfterMs: opts.bufferAfterMs });
   return { store, voice, heard, ...vendors };
 }
 
@@ -118,6 +118,32 @@ describe("a call", () => {
     expect(await voice.personFromSession(el.userId.replace(/.$/, "x"))).toBeUndefined();
     await store.setSetting("paused", true);
     await expect(voice.startCall(diego)).rejects.toThrow(/paused/);
+  });
+});
+
+describe("a slow turn", () => {
+  it("speaks a buffer phrase first, then the answer, with no comment lines in the stream", async () => {
+    const { voice, store } = setup({ delayMs: 80, bufferAfterMs: 10 });
+    const sofia = (await store.getPerson("sofia"))!;
+    const req = { headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never;
+    let raw = "";
+    const res = { writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
+    await voice.completions(req, res, JSON.stringify({ messages: [{ role: "user", content: "¿qué hay hoy?" }], user_id: voice.sessionFor(sofia) }));
+    const deltas = raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "");
+    expect(deltas[0]).toBe("");
+    expect(deltas[1]).toBe("Déjame revisar... ");
+    expect(deltas.slice(2).join("")).toBe("¡A la orden! Bingo a las 8:00 pm. Más aquí:");
+    expect(raw).not.toMatch(/^:/m);
+    expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna \(0\.\d s\): ¿qué hay hoy\?/);
+  });
+
+  it("answers a fast turn without the buffer phrase", async () => {
+    const { voice, store } = setup();
+    const req = { headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never;
+    let raw = "";
+    const res = { writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
+    await voice.completions(req, res, JSON.stringify({ messages: [{ role: "user", content: "hola" }], user_id: voice.sessionFor((await store.getPerson("diego"))!) }));
+    expect(raw).not.toContain("Let me check");
   });
 });
 
