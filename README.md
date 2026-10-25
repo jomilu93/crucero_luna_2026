@@ -34,11 +34,11 @@ Not built yet (see PLAN.md phases): voice notes, realtime voice + avatar, admin 
 - **TV mode.** Open the URL printed at boot (`fly logs` → `TV mode: https://…/tv/<key>`) on the apartment
   TV in full screen. It refreshes itself: clock, now / next with a countdown and a sign-up QR, today's
   program (before the cruise: the next day with activities and a countdown to sailing), rotating flyers,
-  and a QR to open the Capitán's chat.
+  and a QR to the website ("join the cruise"; the "next" QR opens that activity).
 - **Flyers.** "Hazme un flyer" in the chat or the web form: Claude writes the headline, tagline and art
   direction; Flux via fal.ai paints the background (`FAL_KEY`, optional `FAL_MODEL`, default
-  `fal-ai/flux/dev`); the server overlays title, date, place, host and a QR that opens the chat and signs
-  the scanner up (`t.me/<bot>?start=signup_<id>`). Without `FAL_KEY`, or if the image call fails, a designed
+  `fal-ai/flux/dev`); the server overlays title, date, place, host and a QR that opens the
+  activity on the website (`/a/<id>`; a new browser joins first, then lands on it). Without `FAL_KEY`, or if the image call fails, a designed
   gradient per vibe is used. PNGs go to Supabase Storage (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`,
   public bucket `media`, created automatically) or, before that exists, to the data volume at `/media`.
 
@@ -82,8 +82,21 @@ WhatsApp is parked (see Troubleshooting below); Telegram needs no phone number, 
 2. Add the token as the `TELEGRAM_BOT_TOKEN` repository secret and run **Deploy to Fly**. On boot the server calls
    `setWebhook` for `PUBLIC_URL/webhooks/telegram` with a secret derived from the token; `fly logs` shows
    `telegram webhook → …`. Locally: put the token in `.env`, expose port 8080 with a tunnel and set `PUBLIC_URL`.
-3. Share `https://t.me/<bot username>`. A passenger taps **Start**, is boarded from their Telegram name, and the
-   Capitán asks what to call them. Passengers are stored as `tg:<chat id>`; buttons are inline keyboards.
+3. Passengers start on the website (below); "Conectar Telegram" in their cabin opens
+   `t.me/<bot>?start=link_<code>`, which attaches that chat to them. Writing to the bot directly still works: the
+   passenger is boarded from their Telegram name. Chats are stored as `tg:<chat id>`; buttons are inline keyboards.
+
+### The website is the front door
+
+Share the ship's URL (`PUBLIC_URL`, e.g. https://crucero-luna-2026.fly.dev) in the family group with the
+`BOARDING_CODE`. The home page explains the Moonshine of the Seas and asks for name, phone number and the code:
+- the code boards a passenger; `ADMIN_PASSWORD` typed as the code boards an admin (or promotes an existing one);
+- a number already on the manifest signs that passenger back in (same cabin on a new phone or computer);
+- the browser keeps its cabin in a cookie, so the home page sends it straight there (`/?home` shows the page);
+- 8 wrong codes from one address lock it out for 15 minutes.
+From the cabin, passengers do everything on the web, connect Telegram (WhatsApp later: a number that joined on the
+web is recognised when it first writes), or call the Bridge. Telegram-first passengers can add their number under
+Preferencias to sign in on the web. Migration `005_contact_phone.sql` adds the passenger's own number.
 
 With `TELEGRAM_BOT_TOKEN` set, Telegram wins over `META_*`/`TWILIO_*` and only `/webhooks/telegram` is live.
 

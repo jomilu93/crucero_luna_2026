@@ -9,6 +9,7 @@ import { parseTelegramUpdate } from "./telegram.js";
 import { type TvDeps, serveTv } from "./tv.js";
 import { parseTwilioInbound, validateTwilioSignature } from "./twilio.js";
 import type { VoiceService } from "./voice.js";
+import { type HomeDeps, handleHome } from "./home.js";
 import { type WebDeps, handleWeb } from "./web.js";
 
 export interface RouterDeps {
@@ -30,7 +31,7 @@ export interface RouterDeps {
   /** Which webhook routes are live; the others answer 404. Default: all. */
   webhooks?: ("meta" | "twilio" | "telegram")[];
   /** Web app (/c/…), TV mode (/tv/<key>), and locally stored media (/media/…), when configured. */
-  web?: WebDeps;
+  web?: WebDeps | HomeDeps;
   tv?: TvDeps;
   diskMedia?: DiskMediaStore;
   /** "Call the Bridge": the custom LLM endpoint ElevenLabs calls (/v1/chat/completions). */
@@ -95,6 +96,9 @@ export function createRouter(deps: RouterDeps) {
     try {
       if (req.method === "GET" && url.pathname === "/health") return send(res, 200, "ok");
       if (url.pathname.startsWith("/c/") && deps.web && (await handleWeb(deps.web, req, res, url))) return;
+      // The website is the front door: home page, "join the cruise", QR-code entries to one activity, sign out.
+      const front = url.pathname === "/" || url.pathname === "/join" || url.pathname === "/logout" || url.pathname.startsWith("/a/");
+      if (front && deps.web && (await handleHome(deps.web, req, res, url))) return;
       const tv = url.pathname.match(/^\/tv\/([A-Za-z0-9_-]+)(\/data\.json|\/call\.json|\/call|\/log)?$/);
       if ((req.method === "GET" || (req.method === "POST" && (tv?.[2] === "/call" || tv?.[2] === "/log"))) && tv && deps.tv) {
         if (tv[1] !== deps.tv.key) return send(res, 404, "not found");

@@ -1,7 +1,7 @@
 /**
  * TV mode: a kiosk page for the apartment TV at /tv/<key>. The page polls /tv/<key>/data.json
  * every 30 s and shows the ship clock, what is on now and next (with a countdown), today's
- * program, rotating flyers, and QR codes that open the Capitán's chat (and sign up for "next").
+ * program, rotating flyers, and QR codes to the website: "join the cruise", and "next" to sign up for it.
  */
 import type { ServerResponse } from "node:http";
 import { SHIP_FORMER_NAME, SHIP_NAME, headlineFor } from "@crucero/agent";
@@ -15,6 +15,8 @@ export interface TvDeps {
   store: Store;
   key: string;
   botUsername?: () => string | undefined;
+  /** The website the QR codes open (home page, and /a/<id> for one activity). Without it they open the Telegram bot. */
+  publicUrl?: string;
   /** Live Capitán on the TV (voice.ts): a mic button, and calls handed over from phones. */
   voice?: VoiceService;
   now?: () => Date;
@@ -71,14 +73,17 @@ export async function tvData(deps: TvDeps) {
     daysToSail: daysToSail > 0 ? daysToSail : null,
     headline: headlineFor(today) ?? null,
     now: await Promise.all(current.map(view)),
-    next: next ? { ...(await view(next)), qr: bot ? await qr(`https://t.me/${bot}?start=signup_${next.id}`) : null } : null,
+    next: next
+      ? { ...(await view(next)), qr: deps.publicUrl ? await qr(`${deps.publicUrl}/a/${next.id}`) : bot ? await qr(`https://t.me/${bot}?start=signup_${next.id}`) : null }
+      : null,
     today: await Promise.all(acts.map(view)),
     // Every upcoming flyer on the cruise, soonest first, so the screen advertises what is coming.
     flyers: (await deps.store.listActivities({ from: dayBounds(realToday).from }))
       .filter((a) => a.flyerUrl?.startsWith("http") && a.endsAt > nowIso)
       .slice(0, 12)
       .map((a) => ({ url: a.flyerUrl!, title: a.title })),
-    joinQr: bot ? await qr(`https://t.me/${bot}`) : null,
+    joinQr: deps.publicUrl ? await qr(`${deps.publicUrl}/`) : bot ? await qr(`https://t.me/${bot}`) : null,
+    joinText: deps.publicUrl ? `Únete al crucero: ${deps.publicUrl.replace(/^https?:\/\//, "")}` : bot ? `Escanea con Telegram: @${bot}` : null,
     bot: bot ?? null,
   };
 }
@@ -170,7 +175,7 @@ function render() {
     ? data.today.map((a) => '<li class="' + (a.endsAt <= nowIso ? "past" : a.startsAt <= nowIso ? "live" : "") + '"><span class="t">' + h(a.time) + "</span><span>" + h(a.emoji) + " " + h(a.title) + '</span><span class="meta">' + h(a.location) + (a.capacity ? " · " + a.going + "/" + a.capacity : "") + "</span></li>").join("")
     : '<li class="empty">Hoy no hay actividades todavía.</li>';
   document.getElementById("join").innerHTML = data.joinQr
-    ? '<img src="' + data.joinQr + '" alt=""><div><b>Habla con el Capitán</b><br>Escanea con Telegram: @' + h(data.bot) + "</div>"
+    ? '<img src="' + data.joinQr + '" alt=""><div><b>Sube a bordo</b><br>' + h(data.joinText) + "</div>"
     : "<div>Habla con el Capitán por chat</div>";
 }
 function rotateFlyer() {

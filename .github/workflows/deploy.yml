@@ -60,11 +60,12 @@ jobs:
           FAL_KEY: ${{ secrets.FAL_KEY }}
           WEB_SECRET: ${{ secrets.WEB_SECRET }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          BOARDING_CODE: ${{ secrets.BOARDING_CODE }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ANAM_API_KEY: ${{ secrets.ANAM_API_KEY }}
         run: |
           : > secrets.env
-          for k in ANTHROPIC_API_KEY DATABASE_URL META_ACCESS_TOKEN META_PHONE_NUMBER_ID META_APP_SECRET META_VERIFY_TOKEN META_GRAPH_VERSION PRIVACY_CONTACT TELEGRAM_BOT_TOKEN SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY FAL_KEY WEB_SECRET ADMIN_PASSWORD ELEVENLABS_API_KEY ANAM_API_KEY; do
+          for k in ANTHROPIC_API_KEY DATABASE_URL META_ACCESS_TOKEN META_PHONE_NUMBER_ID META_APP_SECRET META_VERIFY_TOKEN META_GRAPH_VERSION PRIVACY_CONTACT TELEGRAM_BOT_TOKEN SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY FAL_KEY WEB_SECRET ADMIN_PASSWORD BOARDING_CODE ELEVENLABS_API_KEY ANAM_API_KEY; do
             if [ -n "${!k}" ]; then printf '%s=%s\n' "$k" "${!k}" >> secrets.env; echo "will set $k"; fi
           done
           # --stage: applied by the deploy below instead of restarting the machine twice.

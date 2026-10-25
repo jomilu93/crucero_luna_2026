@@ -35,6 +35,11 @@ export interface ChatServiceOptions {
   welcomePhotoUrl?: string;
   /** ADMIN_PASSWORD: a passenger who sends exactly this (or "/admin <password>") becomes an admin. */
   adminPassword?: string;
+  /**
+   * Checks a "connect your chat" code from the website (a `link:<code>` payload, e.g. Telegram's /start link_…) and
+   * returns the passenger it belongs to. The chat is then attached to that passenger.
+   */
+  verifyChatLink?: (code: string) => string | undefined;
   now?: () => Date;
 }
 
@@ -78,6 +83,9 @@ const OFF_DUTY = {
   en: "🌙 The Capitán is off duty for a moment: the ship is paused. Back soon!",
 } as const;
 
+/** A "connect this chat" payload from the website's deep link: `link:<code>`. */
+export const CHAT_LINK_PREFIX = "link:";
+
 /** Morning template buttons. The payloads are what Twilio/Meta send back when tapped. */
 export const MORNING_BUTTONS = {
   show: "ver_mi_dia",
@@ -107,6 +115,7 @@ export class ChatService {
   private readonly staleAfterMs: number;
   private readonly maxHistory: number;
   private readonly adminPassword?: string;
+  private readonly verifyChatLink?: (code: string) => string | undefined;
   private readonly welcomePhotoUrl?: string;
   private readonly now: () => Date;
 
@@ -119,6 +128,7 @@ export class ChatService {
     this.staleAfterMs = opts.staleAfterMs ?? 12 * 3600 * 1000;
     this.maxHistory = opts.maxHistory ?? 30;
     this.adminPassword = opts.adminPassword;
+    this.verifyChatLink = opts.verifyChatLink;
     this.welcomePhotoUrl = opts.welcomePhotoUrl;
     this.now = opts.now ?? (() => new Date());
   }
@@ -126,6 +136,9 @@ export class ChatService {
   async resolvePassenger(msg: InboundMessage): Promise<{ person: Person; isNew: boolean }> {
     const existing = await this.store.findPersonByPhone(msg.phoneE164);
     if (existing) return { person: existing, isNew: false };
+    // Joined on the website with this number and now writes on WhatsApp: the same passenger, now with a chat.
+    const byNumber = (await this.store.listPeople()).find((p) => p.contactPhone === msg.phoneE164 && !p.phoneE164);
+    if (byNumber) return { person: await this.store.updatePerson(byNumber.id, { phoneE164: msg.phoneE164 }), isNew: false };
     const person = await this.store.createPerson({
       name: msg.profileName?.trim() || "Pasajero sin nombre",
       phoneE164: msg.phoneE164,
@@ -146,8 +159,54 @@ export class ChatService {
     return true;
   }
 
+  /**
+   * Attaches this chat to the passenger who joined on the website and tapped "connect Telegram". If the chat already
+   * belongs to another passenger (they wrote to the bot first), the two become one: whichever has nothing on the
+   * manifest yet (no sign-ups, nothing hosted, nothing remembered) gives way, keeping its phone and admin flag.
+   */
+  async linkChat(address: string, personId: string): Promise<{ person: Person; linked: boolean }> {
+    const target = await this.store.getPerson(personId);
+    const current = await this.store.findPersonByPhone(address);
+    if (!target) return { person: current ?? (await this.resolvePassenger({ phoneE164: address, text: "" })).person, linked: false };
+    if (current?.id === target.id) return { person: target, linked: true };
+    const fresh = async (p: Person) =>
+      (await this.store.listSignupsForPerson(p.id)).every((s) => s.status === "out") &&
+      !(await this.store.listActivities({ sponsorId: p.id })).length &&
+      !(await this.store.getMemory(p.id)).length;
+    if (!current) return { person: await this.store.updatePerson(target.id, { phoneE164: address }), linked: true };
+    if (await fresh(current)) {
+      await this.store.removePerson(current.id);
+      return { person: await this.store.updatePerson(target.id, { phoneE164: address, admin: target.admin || current.admin || undefined }), linked: true };
+    }
+    if (await fresh(target)) {
+      await this.store.removePerson(target.id);
+      const keep = await this.store.updatePerson(current.id, {
+        contactPhone: current.contactPhone ?? target.contactPhone,
+        admin: current.admin || target.admin || undefined,
+      });
+      return { person: keep, linked: true };
+    }
+    return { person: current, linked: false };
+  }
+
   /** Handle one inbound message end to end. Returns the text that was sent back (for logs/tests). */
   async handle(msg: InboundMessage): Promise<{ person: Person; reply?: string; releasedMorning: boolean }> {
+    const linkCode = msg.buttonPayload?.startsWith(CHAT_LINK_PREFIX) ? msg.buttonPayload.slice(CHAT_LINK_PREFIX.length) : undefined;
+    const linkTo = linkCode ? this.verifyChatLink?.(linkCode) : undefined;
+    if (linkTo) {
+      const { person, linked } = await this.linkChat(msg.phoneE164, linkTo);
+      // The Capitán says hello on the new channel himself, knowing they came from the website.
+      const text = linked
+        ? person.language === "en"
+          ? "[The passenger just connected this chat from the website; welcome them to chatting here.] Hi Capitán"
+          : "[El pasajero acaba de conectar este chat desde la página web; dale la bienvenida a platicar por aquí.] Hola Capitán"
+        : person.language === "en"
+          ? "[The passenger tried to connect this chat from the website, but it already belongs to a passenger with their own plans; tell them an admin can sort it out.] Hi Capitán"
+          : "[El pasajero intentó conectar este chat desde la web, pero ya pertenece a un pasajero con planes propios; dile que un admin lo puede arreglar.] Hola Capitán";
+      const reply = await this.converse(person, text, msg.channel === "telegram" ? "telegram" : "whatsapp");
+      if (reply) await this.outbox.send(person, reply, { from: person });
+      return { person, reply, releasedMorning: false };
+    }
     const { person, isNew } = await this.resolvePassenger(msg);
     if (isNew && this.welcomePhotoUrl && !(await isPaused(this.store))) {
       // Like the real screen at the apartment's door, Manpaty is the first thing a new passenger sees.

@@ -39,6 +39,16 @@ describe("PgStore on a real Postgres (PGlite)", () => {
     expect(await store.findPersonByName("nadie")).toBeUndefined();
   });
 
+  it("keeps a web passenger's own phone apart from their chat address, and admins created as such", async () => {
+    const web = await store.createPerson({ name: "Tía Lupe", contactPhone: "+525512345678", language: "es", role: "adult", admin: true });
+    expect(web).toMatchObject({ contactPhone: "+525512345678", admin: true });
+    expect(web.phoneE164).toBeUndefined();
+    const linked = await store.updatePerson(web.id, { phoneE164: "tg:42" });
+    expect(linked).toMatchObject({ phoneE164: "tg:42", contactPhone: "+525512345678" });
+    await expect(store.createPerson({ name: "Otra", contactPhone: "+525512345678", language: "es", role: "adult" })).rejects.toThrow();
+    await store.removePerson(web.id);
+  });
+
   it("updates people including quiet hours", async () => {
     const p = await store.updatePerson(diego.id, { humor: "light", quietHours: { start: "22:00", end: "08:00" }, nickname: "Dieguito" });
     expect(p.humor).toBe("light");

@@ -44,6 +44,7 @@ function rowToPerson(r: Row): Person {
     name: String(r.name),
     nickname: opt<string>(r.nickname),
     phoneE164: opt<string>(r.phone_e164),
+    contactPhone: opt<string>(r.contact_phone),
     language: r.language as Person["language"],
     role: r.role as Person["role"],
     guardianId: opt<string>(r.guardian_id),
@@ -97,6 +98,7 @@ const PERSON_COLS: Record<string, string> = {
   name: "name",
   nickname: "nickname",
   phoneE164: "phone_e164",
+  contactPhone: "contact_phone",
   language: "language",
   role: "role",
   guardianId: "guardian_id",
@@ -175,8 +177,8 @@ export class PgStore implements Store {
   }
   async createPerson(input: NewPerson): Promise<Person> {
     const rows = await this.db.query<Row>(
-      `insert into person (name, nickname, phone_e164, language, role, guardian_id, humor, quiet_start, quiet_end, wake_time)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning *`,
+      `insert into person (name, nickname, phone_e164, language, role, guardian_id, humor, quiet_start, quiet_end, wake_time, contact_phone, admin)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning *`,
       [
         input.name,
         input.nickname ?? null,
@@ -188,6 +190,8 @@ export class PgStore implements Store {
         input.quietHours?.start ?? null,
         input.quietHours?.end ?? null,
         input.wakeTime ?? "07:30",
+        input.contactPhone ?? null,
+        input.admin === true,
       ],
     );
     return rowToPerson(rows[0]);

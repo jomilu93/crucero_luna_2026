@@ -16,7 +16,7 @@ import { createRouter } from "./http.js";
 import { FalImageGenerator, FlyerService } from "./flyer.js";
 import { DiskMediaStore, type MediaStore, SupabaseMediaStore } from "./media.js";
 import { MetaWhatsAppOutbox } from "./meta.js";
-import { cabinUrl, tvKey } from "./web.js";
+import { cabinUrl, tvKey, verifyChatLink } from "./web.js";
 import { TelegramOutbox, telegramWebhookSecret } from "./telegram.js";
 import { TwilioWhatsAppOutbox } from "./twilio.js";
 import { VoiceService } from "./voice.js";
@@ -109,7 +109,8 @@ if (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
 const webSecret =
   env.WEB_SECRET || createHash("sha256").update(`crucero-web:${env.TELEGRAM_BOT_TOKEN ?? env.META_APP_SECRET ?? env.ANTHROPIC_API_KEY ?? "dev"}`).digest("hex");
 let botUsername: string | undefined;
-const signupUrl = (a: { id: string }) => (botUsername ? `https://t.me/${botUsername}?start=signup_${a.id}` : `${publicUrl}/`);
+// Flyer QR codes open the activity on the website (joining first if needed), like everything else.
+const signupUrl = (a: { id: string }) => `${publicUrl}/a/${a.id}`;
 
 const images = env.FAL_KEY ? new FalImageGenerator(env.FAL_KEY, env.FAL_MODEL || undefined) : undefined;
 const flyers = new FlyerService({
@@ -128,9 +129,11 @@ const director = new Director(store, { client, outbox, flyers, cabinLink });
 // Telegram fetches the welcome photo by URL, so it only goes out when the server has a public address.
 const chat = new ChatService(store, director, outbox, {
   adminPassword: env.ADMIN_PASSWORD,
+  verifyChatLink: (code) => verifyChatLink(webSecret, code),
   welcomePhotoUrl: publicUrl.startsWith("https://") ? `${publicUrl}/manpaty.png?bg=white` : undefined,
 });
-log(env.ADMIN_PASSWORD ? "admin: password set (say it in the chat to become an admin)" : "admin: no ADMIN_PASSWORD, so nobody can become an admin from the chat");
+log(env.ADMIN_PASSWORD ? "admin: password set (say it in the chat, or type it as the code when joining on the website)" : "admin: no ADMIN_PASSWORD, so nobody can become an admin");
+log(env.BOARDING_CODE ? "boarding: the website asks for BOARDING_CODE" : "boarding: open (anyone with the link can join on the website; set BOARDING_CODE)");
 
 // "Call the Bridge": the Capitán's live video calls (Anam avatar + ElevenLabs voice, our brain).
 const voice = new VoiceService({
@@ -170,8 +173,18 @@ const server = createServer(
     // Only the active channel's webhook is live, so a parked channel can never board passengers.
     webhooks: channel === "console" ? undefined : [channel],
     privacyContact: env.PRIVACY_CONTACT || undefined,
-    web: { store, outbox, publicUrl, secret: webSecret, flyers, voice, botUsername: () => botUsername },
-    tv: { store, key: tvKey(webSecret), voice, botUsername: () => botUsername },
+    web: {
+      store,
+      outbox,
+      publicUrl,
+      secret: webSecret,
+      flyers,
+      voice,
+      botUsername: () => botUsername,
+      boardingCode: env.BOARDING_CODE || undefined,
+      adminPassword: env.ADMIN_PASSWORD || undefined,
+    },
+    tv: { store, key: tvKey(webSecret), voice, botUsername: () => botUsername, publicUrl },
     voice,
     botUsername: () => botUsername,
     diskMedia,
