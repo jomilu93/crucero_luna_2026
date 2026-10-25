@@ -23,7 +23,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (143 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (154 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -93,6 +93,15 @@ via `sendUserMessage` → silence until the caller spoke (Anam doesn't forward i
 doesn't fire before anyone has spoken). Now: the first message (agent and per-call override) opens with
 `GREETING_PAUSE` (`<break time="2.5s" />`, Flash v2.5 honours SSML breaks up to 3 s) before `greetingFor()`.
 Needs "Volver a configurar".
+
+**Website as the front door (2026-10-25, owner's call: installing Telegram was too much friction for the family):**
+`home.ts` serves the public home page (what the ship is, how it works, the crew, join form) and `/join`: name +
+phone + code. `BOARDING_CODE` boards a passenger, `ADMIN_PASSWORD` (a GitHub secret; never write it in the repo)
+boards an admin; a known number signs that passenger back in. `Person.contactPhone` (migration 005) is their own
+number, separate from `phoneE164` (the chat address). Cabin cookie `cl_cabin` (home → cabin), `/a/<id>` for QR codes
+(TV and flyers now point to the website), `/logout`. In the cabin: a "talk to the Capitán" card (web ✓, Telegram
+connect via `t.me/<bot>?start=link_<code>` → `ChatService.linkChat`, which merges a fresh duplicate, video call,
+WhatsApp soon); Preferencias takes a phone number. `resolvePassenger` matches a WhatsApp number to a web passenger.
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;

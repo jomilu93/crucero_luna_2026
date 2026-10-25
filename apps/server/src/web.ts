@@ -7,13 +7,16 @@
  *   /c/<cabin token>/new             → sponsor form
  *   /c/<cabin token>/bridge          → "Call the Bridge": video call with the Capitán, or talk to him on the TV
  *   /c/<cabin token>/admin           → admin panel (admins only): pause switch, manifest, kids, removals, TV link
+ *   / , /join, /a/<id>, /logout      → the public home page and "join the cruise" (home.ts)
  *   /tv/<tv key>  (+ /data.json)     → TV mode for the apartment screen (tv.ts)
  *
  * Every write goes through the Capitán's own tools (buildTools), so permissions, capacity,
  * waitlists and quiet hours are identical on the web and in the chat. A cabin token is
- * "<person id>.<hmac(person id + ics token)>": unguessable, and revoked by rotating the ICS token.
+ * "<person id>.<hmac(person id + ics token)>": unguessable, and revoked by rotating the ICS token. Opening a cabin
+ * link also keeps it in a cookie, so the home page sends a returning passenger straight to their cabin.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { normalizePhone } from "@crucero/db";
 import { phoneBridgePage } from "./bridge.js";
 import type { VoiceService } from "./voice.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -43,6 +46,10 @@ export interface WebDeps {
   botUsername?: () => string | undefined;
   /** Live video calls with the Capitán (voice.ts), when configured. */
   voice?: VoiceService;
+  /** BOARDING_CODE: the family's code for joining on the website (unset: anyone with the link can join). */
+  boardingCode?: string;
+  /** ADMIN_PASSWORD: typed as the code on the join form, it boards the passenger as an admin. */
+  adminPassword?: string;
   now?: () => Date;
 }
 
@@ -62,7 +69,42 @@ export function tvKey(secret: string): string {
   return sig(secret, "tv-mode", 20);
 }
 
-async function personFromToken(deps: WebDeps, token: string): Promise<Person | undefined> {
+/** The code in "connect Telegram" deep links (t.me/<bot>?start=link_<code>): person id + a 16-char signature. */
+export function chatLinkCode(secret: string, p: Pick<Person, "id">): string {
+  return `${p.id}_${sig(secret, `chatlink:${p.id}`, 16)}`;
+}
+
+/** The passenger a chat link code belongs to, or undefined. */
+export function verifyChatLink(secret: string, code: string): string | undefined {
+  const id = code.slice(0, -17);
+  if (!id || code[code.length - 17] !== "_") return undefined;
+  const want = Buffer.from(chatLinkCode(secret, { id }));
+  const got = Buffer.from(code);
+  return want.length === got.length && timingSafeEqual(want, got) ? id : undefined;
+}
+
+/** Telegram deep link for this passenger: their chat if it is already connected, else "connect this chat". */
+export function chatUrl(deps: Pick<WebDeps, "secret">, bot: string, p: Person): string {
+  return p.phoneE164?.startsWith("tg:") ? `https://t.me/${bot}` : `https://t.me/${bot}?start=link_${chatLinkCode(deps.secret, p)}`;
+}
+
+// ---------- the session cookie ----------
+
+export const SESSION_COOKIE = "cl_cabin";
+
+export function sessionCookie(token: string | undefined, publicUrl: string): string {
+  const secure = publicUrl.startsWith("https://") ? "; Secure" : "";
+  return token
+    ? `${SESSION_COOKIE}=${token}; Path=/; Max-Age=${180 * 86400}; HttpOnly; SameSite=Lax${secure}`
+    : `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`;
+}
+
+export function sessionToken(req: IncomingMessage): string | undefined {
+  const m = (req.headers.cookie ?? "").match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([A-Za-z0-9_.-]+)`));
+  return m?.[1];
+}
+
+export async function personFromToken(deps: Pick<WebDeps, "store" | "secret">, token: string): Promise<Person | undefined> {
   const dot = token.lastIndexOf(".");
   if (dot < 1) return undefined;
   const person = await deps.store.getPerson(token.slice(0, dot));
@@ -100,6 +142,12 @@ const T = {
     agentBtn: "Configurar agente de voz", agentRedo: "Volver a configurar", voiceId: "ID de voz", voiceHelp: "Elige una voz en español en la biblioteca de ElevenLabs y pega su ID.",
     diagnose: "Diagnóstico de llamadas", diagnoseHelp: "Revisa la configuración real del agente en ElevenLabs y por qué terminaron las últimas llamadas.", diagnoseBtn: "Diagnosticar",
     testCall: "Probar llamada", portraits: "Retratos del Capitán", avatarHelp: "Pinta retratos y elige uno: se convierte en su avatar en vivo.",
+    welcome: "¡Bienvenido a bordo!", talkTitle: "Habla con el Capitán", talkSub: "Todo se puede hacer aquí en la web. Si prefieres, también por chat o videollamada.",
+    viaWeb: "Aquí en la web", viaWebSub: "Programa, apuntarte y organizar: ya estás aquí.", viaTg: "Telegram", viaTgOn: "Conectado: ahí te llega tu programa cada mañana y tus recordatorios.",
+    viaTgOff: "Conéctalo para recibir tu programa cada mañana, recordatorios y chatear con él.", connect: "Conectar", open: "Abrir",
+    viaCall: "Videollamada", viaCallSub: "Habla con él cara a cara desde el Puente.", viaWa: "WhatsApp", soon: "Próximamente",
+    myNumber: "Tu número", myNumberHelp: "Para entrar desde otro teléfono o computadora con tu número.", logout: "Salir de este dispositivo",
+    numberTaken: "Ese número ya es de otro pasajero.", badNumber: "Ese número no parece válido.",
   },
   en: {
     myCruise: "My cruise", program: "Program", sponsor: "Host", today: "Today", hosting: "You host", mine: "Your plan",
@@ -126,6 +174,12 @@ const T = {
     agentBtn: "Set up the voice agent", agentRedo: "Set it up again", voiceId: "Voice ID", voiceHelp: "Pick a Spanish voice in the ElevenLabs voice library and paste its ID.",
     diagnose: "Call diagnostics", diagnoseHelp: "Checks the agent's real configuration on ElevenLabs and why the last calls ended.", diagnoseBtn: "Diagnose",
     testCall: "Test call", portraits: "The Capitán's portraits", avatarHelp: "Paint portraits and pick one: it becomes his live avatar.",
+    welcome: "Welcome aboard!", talkTitle: "Talk to the Capitán", talkSub: "You can do everything right here on the web. If you prefer, also by chat or video call.",
+    viaWeb: "Right here on the web", viaWebSub: "Program, sign-ups and hosting: you're already here.", viaTg: "Telegram", viaTgOn: "Connected: your morning program and reminders arrive there.",
+    viaTgOff: "Connect it to get your morning program, reminders, and to chat with him.", connect: "Connect", open: "Open",
+    viaCall: "Video call", viaCallSub: "Talk to him face to face from the Bridge.", viaWa: "WhatsApp", soon: "Coming soon",
+    myNumber: "Your number", myNumberHelp: "To sign in from another phone or computer with your number.", logout: "Sign out on this device",
+    numberTaken: "That number already belongs to another passenger.", badNumber: "That number doesn't look valid.",
   },
 } as const satisfies Record<"es" | "en", Record<string, string>>;
 type Strings = Record<keyof (typeof T)["es"], string>;
@@ -152,7 +206,7 @@ const ICON: Record<string, string> = {
   video: '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5z"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 };
-const icon = (name: string, size = 20, cls = "ic") =>
+export const icon = (name: string, size = 20, cls = "ic") =>
   `<svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
 
 /** Placeholder art for activities without a flyer: an ocean gradient picked from the id. */
@@ -189,7 +243,7 @@ const shortDay = (date: string, lang: "es" | "en") => {
   return { wd, day, mon };
 };
 
-const CSS = `
+export const CSS = `
 :root{--navy:#0b1f3f;--blue:#1565d8;--blue2:#0d4fb0;--sky:#e8f1fd;--gold:#f2b632;--bg:#f2f5f9;--card:#fff;--ink:#0b1f3f;--muted:#5b6b82;--line:#e3e9f1;--ok:#0e8a5f;--warn:#c2410c;--danger:#c62828;--shadow:0 6px 20px rgba(11,31,63,.08)}
 @media (prefers-color-scheme:dark){:root{--bg:#06101e;--card:#0f1d33;--ink:#eaf1fb;--muted:#9db0c8;--line:#1d2f4b;--sky:#13284a;--blue:#4c94ff;--blue2:#3a7ee6;--shadow:0 6px 20px rgba(0,0,0,.35)}}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
@@ -278,6 +332,8 @@ details.card summary .ic.go{margin-left:auto;transition:transform .2s}details[op
 .portraits button{position:absolute;left:6px;right:6px;bottom:6px;padding:6px;font-size:12px;border-radius:10px}.portraits .use img{outline:3px solid var(--gold);outline-offset:2px}
 .ok{color:var(--ok);font-weight:700}.diag{white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:12px;padding:10px;margin:10px 0 0}.no{color:var(--warn);font-weight:700}
 .empty{text-align:center;padding:28px 18px;color:var(--muted)}.empty .e{font-size:40px}
+.btn.small{padding:9px 12px;font-size:14px;border-radius:12px;flex:none}
+@media (min-width:900px){.app,.tabs .in{max-width:760px}.cta .in{max-width:728px}.tile{flex-basis:44%}.feature .cover{height:240px}}
 `;
 
 type Tab = "" | "/program" | "/new" | "/admin" | undefined;
@@ -285,7 +341,7 @@ type Tab = "" | "/program" | "/new" | "/admin" | undefined;
 function page(
   title: string,
   body: string,
-  opts: { lang: "es" | "en"; token?: string; on?: Tab; flash?: string; bot?: string; admin?: boolean; bare?: boolean; cta?: string } = { lang: "es" },
+  opts: { lang: "es" | "en"; token?: string; on?: Tab; flash?: string; chat?: string; admin?: boolean; bare?: boolean; cta?: string } = { lang: "es" },
 ): string {
   const s = T[opts.lang];
   const base = opts.token ? `/c/${esc(opts.token)}` : "";
@@ -293,13 +349,13 @@ function page(
     `<a class="${opts.on === p ? "on" : ""}${mid ? " mid" : ""}" href="${base}${p}">${mid ? `<span class="q">${icon(ic, 24)}</span>` : icon(ic, 24)}${esc(label)}</a>`;
   const tabs = opts.token
     ? `<nav class="tabs"><div class="in">${tab("", s.myCruise, "home")}${tab("/program", s.program, "calendar")}${tab("/new", s.sponsor, "plus", true)}${
-        opts.bot ? `<a href="https://t.me/${esc(opts.bot)}">${icon("chat", 24)}${esc(s.chat)}</a>` : ""
+        opts.chat ? `<a href="${esc(opts.chat)}">${icon("chat", 24)}${esc(s.chat)}</a>` : ""
       }${opts.admin ? tab("/admin", s.admin, "shield") : ""}</div></nav>`
     : "";
   const top = opts.bare
     ? ""
     : `<header class="top"><a class="logo" href="${base || "#"}"><span class="moon"></span><span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(s.sail)}</small></span></a>${
-        opts.bot ? `<a class="pill" href="https://t.me/${esc(opts.bot)}" aria-label="${esc(s.openChat)}">${icon("chat", 16)} ${esc(s.chat)}</a>` : ""
+        opts.chat ? `<a class="pill" href="${esc(opts.chat)}" aria-label="${esc(s.openChat)}">${icon("chat", 16)} ${esc(s.chat)}</a>` : ""
       }</header>`;
   return `<!doctype html><html lang="${opts.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1f3f"><title>${esc(title)} · ${esc(SHIP_NAME)}</title>
@@ -356,7 +412,7 @@ async function activityFeature(deps: WebDeps, a: Activity, viewer: Person, token
 <span>${icon("pin", 16)}${esc(a.location)}</span><span>${icon("star", 16)}${esc(host?.name ?? a.sponsorId)}</span><span>${icon("users", 16)}${going.length}${a.capacity ? `/${a.capacity}` : ""}</span></div></div></a>`;
 }
 
-function readForm(req: IncomingMessage): Promise<URLSearchParams> {
+export function readForm(req: IncomingMessage): Promise<URLSearchParams> {
   return new Promise((resolve, reject) => {
     let body = "";
     req.on("data", (c) => {
@@ -368,7 +424,7 @@ function readForm(req: IncomingMessage): Promise<URLSearchParams> {
   });
 }
 
-const html = (res: ServerResponse, status: number, body: string) => {
+export const html = (res: ServerResponse, status: number, body: string) => {
   res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
   res.end(body);
 };
@@ -376,7 +432,7 @@ const json = (res: ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify(body));
 };
-const redirect = (res: ServerResponse, to: string) => {
+export const redirect = (res: ServerResponse, to: string) => {
   res.writeHead(303, { Location: to });
   res.end();
 };
@@ -393,16 +449,19 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
   const sub = m[2] ?? "";
   const viewer = await personFromToken(deps, token);
   if (!viewer) {
-    html(res, 404, page("—", `<div class="card pad">Enlace no válido. Pídele al Capitán tu enlace: escribe <b>mi enlace</b>.<br><span class="m">Invalid link. Ask the Capitán for yours: write <b>my link</b>.</span></div>`));
+    html(res, 404, page("—", `<div class="card pad">Enlace no válido. <a href="/#join">Entra con tu número</a> o pídele al Capitán tu enlace: escribe <b>mi enlace</b>.<br><span class="m">Invalid link. <a href="/?lang=en#join">Sign in with your number</a> or ask the Capitán for yours: write <b>my link</b>.</span></div>`));
     return true;
   }
+  // This browser now belongs to this passenger: the home page sends them straight back here.
+  res.setHeader("Set-Cookie", sessionCookie(token, deps.publicUrl));
   const lang = viewer.language;
   const s = T[lang];
   const now = deps.now?.() ?? new Date();
   const bot = deps.botUsername?.();
   const flash = url.searchParams.get("ok") ?? undefined;
   const admin = viewer.admin === true;
-  const opts = (on: Tab, extra: { cta?: string } = {}) => ({ lang, token, on, flash, bot, admin, ...extra });
+  const chat = bot ? chatUrl(deps, bot, viewer) : undefined;
+  const opts = (on: Tab, extra: { cta?: string } = {}) => ({ lang, token, on, flash, chat, admin, ...extra });
   const tools = Object.fromEntries(
     buildTools({ store: deps.store, passenger: viewer, now, outbox: deps.outbox, channel: "web", flyers: deps.flyers }).map((t) => [t.name, t]),
   ) as Record<string, { run: (input: any) => Promise<string> }>;
@@ -447,6 +506,16 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
       return true;
     }
     if (sub === "/settings") {
+      const typed = (f.get("phone") ?? "").trim();
+      if (typed) {
+        const phone = normalizePhone(typed);
+        const owner = phone ? (await deps.store.listPeople()).find((p) => p.contactPhone === phone && p.id !== viewer.id) : undefined;
+        if (!phone || owner) {
+          back("", `ERROR: ${phone ? s.numberTaken : s.badNumber}`);
+          return true;
+        }
+        if (phone !== viewer.contactPhone) await deps.store.updatePerson(viewer.id, { contactPhone: phone });
+      }
       const out = await tools.set_preferences.run({
         language: (f.get("language") as "es" | "en") || undefined,
         humor: (f.get("humor") as "full" | "light" | "off") || undefined,
@@ -536,12 +605,24 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
 <a href="/c/${esc(token)}/program"><span class="q">${icon("calendar", 24)}</span>${s.program}</a>
 <a href="/c/${esc(token)}/new"><span class="q">${icon("plus", 24)}</span>${s.sponsor}</a>
 <a href="/c/${esc(token)}/bridge"><span class="q">${icon("video", 24)}</span>${s.bridge}</a>
-${bot ? `<a href="https://t.me/${esc(bot)}"><span class="q">${icon("chat", 24)}</span>${s.chat}</a>` : `<a href="#settings"><span class="q">${icon("gear", 24)}</span>${s.settings}</a>`}</div>`;
+${chat ? `<a href="${esc(chat)}"><span class="q">${icon("chat", 24)}</span>${s.chat}</a>` : `<a href="#settings"><span class="q">${icon("gear", 24)}</span>${s.settings}</a>`}</div>`;
 
     const voice = deps.voice ? await deps.voice.status() : undefined;
     const callCard = voice?.ready
       ? `<a class="card callcard" href="/c/${esc(token)}/bridge">${voice.portraitUrl ? `<img src="${esc(voice.portraitUrl)}" alt="">` : `<span class="ph">🧑‍✈️</span>`}<div class="grow"><div class="t">📞 ${s.callTitle}</div><div class="m">${s.callSub}</div></div>${icon("chevron", 18, "ic go")}</a>`
       : "";
+    const tgOn = !!viewer.phoneE164?.startsWith("tg:");
+    const row = (ic: string, title: string, subline: string, action: string) =>
+      `<div class="item">${icon(ic, 22)}<div class="grow"><div class="tt">${title}</div><div class="m">${subline}</div></div>${action}</div>`;
+    const welcome = url.searchParams.get("welcome") === "1";
+    const talk =
+      welcome || !tgOn
+        ? `${welcome ? `<h2 class="sec">${s.welcome} 🎉</h2>` : `<h2 class="sec">${s.talkTitle}</h2>`}<div class="card"><div class="pad" style="padding-bottom:4px"><div class="m">${s.talkSub}</div></div><div class="list">
+${row("home", s.viaWeb, s.viaWebSub, `<span class="ok">✓</span>`)}
+${chat ? row("chat", s.viaTg, tgOn ? s.viaTgOn : s.viaTgOff, `<a class="btn small${tgOn ? " alt" : ""}" href="${esc(chat)}">${tgOn ? s.open : s.connect}</a>`) : ""}
+${voice?.ready ? row("video", s.viaCall, s.viaCallSub, `<a class="btn small alt" href="/c/${esc(token)}/bridge">📞</a>`) : ""}
+${row("chat", s.viaWa, s.soon, `<span class="badge">${s.soon}</span>`)}</div></div>`
+        : "";
     const nextBlock = next ? `<h2 class="sec">${s.nextUp}</h2>${await activityFeature(deps, next, viewer, token, s, { showDate: true })}` : "";
     const rest = upcoming.slice(next ? 1 : 0);
     const plan = upcoming.length
@@ -568,10 +649,12 @@ ${bot ? `<a href="https://t.me/${esc(bot)}"><span class="q">${icon("chat", 24)}<
 <label>${s.wake}</label><input type="time" name="wake" value="${esc(viewer.wakeTime)}">
 <label>${s.quiet}</label><div class="grid2"><input type="time" name="quiet_start" value="${esc(q?.start ?? "")}"><input type="time" name="quiet_end" value="${esc(q?.end ?? "")}"></div>
 <label class="check"><input type="checkbox" name="muted"${viewer.muted ? " checked" : ""}> ${s.mute}</label>
-<div class="actions"><button>${s.save}</button></div></form></div></details>
+<label>${s.myNumber}</label><input type="tel" name="phone" autocomplete="tel" value="${esc(viewer.contactPhone ?? "")}" placeholder="+52 55 1234 5678"><div class="m" style="margin-top:6px">${s.myNumberHelp}</div>
+<div class="actions"><button>${s.save}</button></div></form>
+<form method="post" action="/logout" class="actions"><button class="small ghost">${s.logout}</button></form></div></details>
 <div class="card list"><a class="item" href="${esc(deps.publicUrl)}/cal/${esc(viewer.icsToken)}.ics">${icon("calendar")}<div class="grow"><div class="tt">${s.calendar}</div><div class="m">.ics · iPhone / Google</div></div>${icon("chevron", 18, "ic go")}</a></div>`;
 
-    html(res, 200, page(s.myCruise, `<section class="hero has-mp"><div class="moon"></div><img class="manpaty" src="/manpaty.svg${sailMs > 0 || dayIdx < 0 ? "" : "?pose=cheer"}" alt="Manpaty">${hero}<div class="formerly">${esc(SHIP_NAME)} · ${lang === "es" ? "anteriormente" : "formerly"} ${esc(SHIP_FORMER_NAME)}</div></section>${quick}${callCard}${nextBlock}${plan}${tiles}<div style="height:12px"></div>${settings}`, opts("")));
+    html(res, 200, page(s.myCruise, `<section class="hero has-mp"><div class="moon"></div><img class="manpaty" src="/manpaty.svg${sailMs > 0 || dayIdx < 0 ? "" : "?pose=cheer"}" alt="Manpaty">${hero}<div class="formerly">${esc(SHIP_NAME)} · ${lang === "es" ? "anteriormente" : "formerly"} ${esc(SHIP_FORMER_NAME)}</div></section>${quick}${welcome ? talk : ""}${callCard}${welcome ? "" : talk}${nextBlock}${plan}${tiles}<div style="height:12px"></div>${settings}`, opts("")));
     return true;
   }
 
@@ -713,7 +796,9 @@ ${diag ? `<pre class="diag">${esc(diag.at.slice(11, 19))} UTC\n${diag.lines.map(
     };
     const rows = everyone
       .map((p) => {
-        const channel = p.phoneE164?.startsWith("tg:") ? "Telegram" : p.phoneE164 ? `WhatsApp ${p.phoneE164}` : s.noChat;
+        const channel = [p.phoneE164?.startsWith("tg:") ? "Telegram" : p.phoneE164 ? `WhatsApp ${p.phoneE164}` : s.noChat, p.contactPhone && p.contactPhone !== p.phoneE164 ? p.contactPhone : ""]
+          .filter(Boolean)
+          .join(" · ");
         const hosts = acts.filter((a) => a.sponsorId === p.id).length;
         const badges = [
           p.admin ? `<span class="badge gold">ADMIN</span>` : "",

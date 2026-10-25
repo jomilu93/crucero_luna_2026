@@ -11,8 +11,10 @@ export interface Person {
   id: string;
   name: string;
   nickname?: string;
-  /** Channel address: E.164 for WhatsApp, `tg:<chat id>` for Telegram. */
+  /** Channel address: E.164 for WhatsApp, `tg:<chat id>` for Telegram. Unset for a web-only passenger. */
   phoneE164?: string;
+  /** Their own phone number (E.164), given when joining on the website; how they log in again on another device. */
+  contactPhone?: string;
   language: Language;
   role: Role;
   /** For kids: the adult who receives their reminders. */

@@ -177,6 +177,9 @@ export function parseTelegramUpdate(body: unknown): ParsedTelegramUpdate | undef
     // /start is how every Telegram chat begins. A flyer/TV QR code adds a payload: /start signup_a04.
     const deepLink = m.text.match(/^\/start\s+signup_([A-Za-z0-9-]+)$/);
     if (deepLink) return { updateId: u.update_id, message: { ...base, text: "Hola Capitán", buttonPayload: `signup:${deepLink[1]}` } };
+    // "Connect Telegram" on the website: /start link_<code> attaches this chat to the passenger who joined there.
+    const link = m.text.match(/^\/start\s+link_([A-Za-z0-9_-]+)$/);
+    if (link) return { updateId: u.update_id, message: { ...base, text: "Hola Capitán", buttonPayload: `link:${link[1]}` } };
     text = /^\/start\b/.test(m.text) ? "Hola Capitán" : m.text.trim();
   } else if (m.voice || m.audio) {
     text = "[El pasajero envió una nota de voz; la transcripción aún no está activa. Pídele que lo escriba.]";
