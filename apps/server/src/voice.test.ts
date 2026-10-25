@@ -7,7 +7,7 @@ import { WebSocket } from "ws";
 import { createRouter } from "./http.js";
 import { phoneBridgePage, tvBridge } from "./bridge.js";
 import { GREETING_PAUSE, VoiceService, greetingFor, sentences, speakable, stillThere } from "./voice.js";
-import { tvKey } from "./web.js";
+import { cabinToken, tvKey } from "./web.js";
 
 const SECRET = "voice-secret";
 const NOW = new Date("2026-12-27T19:00:00Z");
@@ -184,7 +184,8 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
   beforeAll(async () => {
     await ctx.voice.useAvatar("https://media/c.png");
     await ctx.voice.setupAgent();
-    const router = createRouter({ store: ctx.store, chat: undefined as never, publicUrl: "http://ship.test", voice: ctx.voice, tv: { store: ctx.store, key: tvKey(SECRET), voice: ctx.voice, now: () => NOW }, webhooks: [] });
+    const web = { store: ctx.store, outbox: { send: async () => {} }, publicUrl: "http://ship.test", secret: SECRET, voice: ctx.voice, now: () => NOW };
+    const router = createRouter({ store: ctx.store, chat: undefined as never, publicUrl: "http://ship.test", voice: ctx.voice, web, tv: { store: ctx.store, key: tvKey(SECRET), voice: ctx.voice, now: () => NOW }, webhooks: [] });
     server.on("request", (req, res) => void router(req, res));
     server.on("upgrade", (req, socket, head) => {
       if (!ctx.voice.handleUpgrade(req, socket, head)) socket.destroy();
@@ -291,6 +292,21 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
     expect(phoneGot[0]).toBe(JSON.stringify({ type: "peer", role: "tv", connected: true }));
     phone.close();
     tv.close();
+  });
+
+  it("frames the avatar for the caller's screen: portrait on a phone, landscape on a laptop", async () => {
+    const t = cabinToken(SECRET, (await ctx.store.getPerson("sofia"))!);
+    const call = (shape?: string) =>
+      fetch(`${base}/c/${t}/bridge/session`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: shape ? `shape=${shape}` : "" });
+    expect((await call("portrait")).status).toBe(200);
+    expect(ctx.calls.at(-1)!.body.sessionOptions).toMatchObject({ videoWidth: 768, videoHeight: 1152 });
+    await call("landscape");
+    expect(ctx.calls.at(-1)!.body.sessionOptions).toMatchObject({ videoWidth: 1152, videoHeight: 768 });
+    await call();
+    expect(ctx.calls.at(-1)!.body.sessionOptions).toMatchObject({ videoWidth: 768, videoHeight: 1152 });
+    const page = await (await fetch(`${base}/c/${t}/bridge`)).text();
+    expect(page).toContain('shape: innerWidth > innerHeight ? "landscape" : "portrait"');
+    expect(page).toMatch(/@media \(min-aspect-ratio:1\/1\)\{[^}]*\}\.live video\{object-fit:contain\}/);
   });
 
   it("starts a TV-mic call as the shared Bridge seat", async () => {
@@ -484,7 +500,7 @@ describe("call pages", () => {
   it("open the mic before the session starts, so the greeting isn't cut by the phone's audio switch", () => {
     const phone = phoneBridgePage({ lang: "es", base: "/c/x", name: "Sofía", ready: true });
     expect(phone.indexOf("getUserMedia(MIC)")).toBeGreaterThan(0);
-    expect(phone.indexOf("getUserMedia(MIC)")).toBeLessThan(phone.indexOf('post("/bridge/session")'));
+    expect(phone.indexOf("getUserMedia(MIC)")).toBeLessThan(phone.indexOf('post("/bridge/session"'));
     expect(phone).toContain('streamToVideoElement("cap", mic)');
     const tv = tvBridge({ key: "k" });
     expect(tv.indexOf("ownMic = await navigator.mediaDevices.getUserMedia")).toBeLessThan(tv.indexOf('"/call", { method: "POST" }'));
