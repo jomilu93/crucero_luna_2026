@@ -545,7 +545,11 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
     }
     if ((sub === "/bridge/session" || sub === "/bridge/tv") && deps.voice) {
       try {
-        json(res, 200, sub === "/bridge/tv" ? await deps.voice.requestTvCall(viewer) : await deps.voice.startCall(viewer));
+        json(
+          res,
+          200,
+          sub === "/bridge/tv" ? await deps.voice.requestTvCall(viewer) : await deps.voice.startCall(viewer, f.get("shape") === "landscape" ? "tv" : "phone"),
+        );
       } catch (err) {
         json(res, 503, { error: err instanceof Error ? err.message : String(err) });
       }

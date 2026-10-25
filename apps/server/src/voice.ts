@@ -334,6 +334,7 @@ export class VoiceService {
   }
 
   /** An Anam session token for one call: avatar + ElevenLabs agent + the passenger's signed session. */
+  /** `screen`: "phone" is portrait framing, "tv" landscape (the TV, and laptops or tablets held sideways). */
   async startCall(person: Person, screen: "phone" | "tv" = "phone"): Promise<{ sessionToken: string }> {
     const st = await this.status();
     if (!st.ready) throw new Error("the Capitán's video call is not set up yet (Admin tab → Capitán en vivo)");

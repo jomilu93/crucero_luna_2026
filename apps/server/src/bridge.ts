@@ -41,6 +41,8 @@ button{font:inherit;font-weight:800;border:0;border-radius:18px;padding:17px;cur
 .call{background:#16a34a;color:#fff;box-shadow:0 10px 30px rgba(22,163,74,.35)}.tv{background:rgba(255,255,255,.12);color:#fff}
 .end{background:#dc2626;color:#fff;width:72px;height:72px;border-radius:50%;padding:0}.mute{background:rgba(255,255,255,.16);color:#fff;width:60px;height:60px;border-radius:50%;padding:0}
 .live{position:fixed;inset:0;background:#000;display:none;z-index:5}.live video{width:100%;height:100%;object-fit:cover}
+/* A laptop or tablet held sideways gets a landscape avatar, shown whole (never cropped into a giant face). */
+@media (min-aspect-ratio:1/1){.live{background:radial-gradient(ellipse at center,#123a6b 0%,#06101e 75%)}.live video{object-fit:contain}}
 .live .bar{position:absolute;left:0;right:0;bottom:0;padding:20px 20px calc(28px + env(safe-area-inset-bottom));display:flex;gap:22px;justify-content:center;align-items:center;background:linear-gradient(transparent,rgba(0,0,0,.65))}
 .live .tag{position:absolute;top:calc(14px + env(safe-area-inset-top));left:16px;background:rgba(0,0,0,.45);padding:6px 12px;border-radius:999px;font-weight:700;font-size:14px}
 .remote{display:none;text-align:center}.hold{width:min(70vw,260px);aspect-ratio:1;border-radius:50%;margin:0 auto;background:#16a34a;color:#fff;font-size:20px;flex-direction:column;box-shadow:0 0 0 0 rgba(22,163,74,.6);user-select:none;-webkit-user-select:none;touch-action:none}
@@ -103,8 +105,8 @@ const S = ${JSON.stringify(S)};
 const BASE = ${JSON.stringify(o.base)};
 const $ = (id) => document.getElementById(id);
 const say = (t, id = "status") => ($(id).textContent = t);
-async function post(path) {
-  const r = await fetch(BASE + path, { method: "POST" });
+async function post(path, form) {
+  const r = await fetch(BASE + path, { method: "POST", ...(form ? { body: new URLSearchParams(form) } : {}) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
@@ -145,7 +147,8 @@ $("call").onclick = async () => {
     // Open the mic before the Capitán starts talking: phones switch their audio mode when the mic turns on, and
     // that switch swallowed the first seconds of his greeting.
     try { mic = await navigator.mediaDevices.getUserMedia(MIC); } catch { return hangup(S.mic); }
-    const { sessionToken } = await post("/bridge/session");
+    // Wider than tall (a laptop, a tablet sideways): ask for the landscape framing instead of the phone's portrait.
+    const { sessionToken } = await post("/bridge/session", { shape: innerWidth > innerHeight ? "landscape" : "portrait" });
     client = createClient(sessionToken);
     client.addListener("CONNECTION_CLOSED", closed);
     client.addListener("SERVER_WARNING", (m) => { report("warning", "", m); say(m); });
