@@ -192,10 +192,18 @@ const MAX_TRIES = 8;
 const clientOf = (req: IncomingMessage) =>
   String(req.headers["fly-client-ip"] ?? req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? "?").split(",")[0].trim();
 
-const langOf = (req: IncomingMessage, url: URL): Lang => {
+/**
+ * The ship speaks Mexican Spanish: Spanish unless the visitor picked English with the switch (top right), which
+ * is remembered in a cookie. The browser's own language is deliberately ignored.
+ */
+const LANG_COOKIE = "cl_lang";
+const langOf = (req: IncomingMessage, url: URL, res: ServerResponse): Lang => {
   const q = url.searchParams.get("lang");
-  if (q === "en" || q === "es") return q;
-  return /^en\b/i.test(String(req.headers["accept-language"] ?? "")) ? "en" : "es";
+  if (q === "en" || q === "es") {
+    res.setHeader("Set-Cookie", `${LANG_COOKIE}=${q}; Path=/; Max-Age=${365 * 86400}; SameSite=Lax`);
+    return q;
+  }
+  return (req.headers.cookie ?? "").match(new RegExp(`(?:^|;\\s*)${LANG_COOKIE}=en(?:;|$)`)) ? "en" : "es";
 };
 
 const nextOf = (raw: string | null | undefined): string => (raw && /^a\/[A-Za-z0-9-]+$/.test(raw) ? `/${raw}` : "");
@@ -263,7 +271,7 @@ ${form.error ? `<div class="err" role="alert">${esc(form.error)}</div>` : ""}
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>${CSS}${HOME_CSS}</style></head><body>
 <header class="nav"><div class="wrap"><a class="logo" href="/"><span class="moon"></span><span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(VOYAGE_NAME)} · Acapulco</small></span></a>
-<div class="links"><a class="pill" href="/?lang=${other}${next ? `&next=${esc(next.slice(1))}` : ""}">${s.langSwitch}</a><a class="btn" href="#join">${s.join}</a></div></div></header>
+<div class="links"><a class="pill" href="/?home&lang=${other}${next ? `&next=${esc(next.slice(1))}` : ""}" hreflang="${other}">🌐 ${s.langSwitch}</a><a class="btn" href="#join">${s.join}</a></div></div></header>
 ${hero}${invitedTo || form.error ? join : ""}${feats}${steps}${crew}${invitedTo || form.error ? "" : join}
 <div class="foot">${esc(SHIP_NAME)} · ${esc(VOYAGE_NAME)} · <a href="${esc(deps.privacyUrl ?? "/privacy")}">${s.privacy}</a></div>
 ${form.error || invitedTo ? `<script>document.getElementById("join").scrollIntoView()</script>` : ""}</body></html>`;
@@ -278,7 +286,7 @@ async function sessionPerson(deps: HomeDeps, req: IncomingMessage): Promise<{ pe
 
 /** Returns true when it handled the request. */
 export async function handleHome(deps: HomeDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
-  const lang = langOf(req, url);
+  const lang = langOf(req, url, res);
   if (req.method === "GET" && url.pathname === "/") {
     const me = await sessionPerson(deps, req);
     const next = nextOf(url.searchParams.get("next"));
