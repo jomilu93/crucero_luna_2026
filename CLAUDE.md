@@ -102,6 +102,8 @@ number, separate from `phoneE164` (the chat address). Cabin cookie `cl_cabin` (h
 (TV and flyers now point to the website), `/logout`. In the cabin: a "talk to the Capitán" card (web ✓, Telegram
 connect via `t.me/<bot>?start=link_<code>` → `ChatService.linkChat`, which merges a fresh duplicate, video call,
 WhatsApp soon); Preferencias takes a phone number. `resolvePassenger` matches a WhatsApp number to a web passenger.
+Language: Mexican Spanish by default everywhere (the browser's language is ignored); "🌐 English" top right switches
+the home page (cookie `cl_lang`) and, in the cabin, the passenger's own language (`POST /c/<token>/lang`).
 
 ## Next steps, in order
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;

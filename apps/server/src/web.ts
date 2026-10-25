@@ -254,7 +254,8 @@ a{color:var(--blue)}.ic{flex:none;vertical-align:-4px}
 .top a{color:#fff;text-decoration:none}.logo{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.06em;font-size:15px}
 .logo .moon{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff6d5,#f2b632 70%);box-shadow:0 0 14px rgba(242,182,50,.6)}
 .logo small{display:block;white-space:nowrap;font-weight:500;letter-spacing:0;opacity:.7;font-size:12px}
-.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.14);font-size:13px;font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.14);color:#fff;font-size:13px;font-weight:600;white-space:nowrap}
+.topr{display:flex;gap:6px;align-items:center}.topr form{margin:0}@media (max-width:430px){.topr a.pill{display:none}}button.pill{font:inherit;font-size:13px;font-weight:600;border:0;cursor:pointer;padding:7px 12px}
 main{padding:16px}
 .hero{position:relative;overflow:hidden;border-radius:24px;padding:22px 20px 26px;color:#fff;background:linear-gradient(160deg,#0b2a5b 0%,#0a4d8c 55%,#16a3c9 100%);box-shadow:var(--shadow)}
 .hero:after{content:"";position:absolute;left:0;right:0;bottom:0;height:46px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 46' preserveAspectRatio='none'%3E%3Cpath d='M0 22c50-18 100-18 150 0s100 18 150 0 70-14 100-6v30H0z' fill='%23ffffff' fill-opacity='.14'/%3E%3Cpath d='M0 32c60-14 110-12 170 2s120 12 170-2 45-8 60-4v18H0z' fill='%23ffffff' fill-opacity='.18'/%3E%3C/svg%3E") center/100% 100% no-repeat}
@@ -354,9 +355,11 @@ function page(
     : "";
   const top = opts.bare
     ? ""
-    : `<header class="top"><a class="logo" href="${base || "#"}"><span class="moon"></span><span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(s.sail)}</small></span></a>${
-        opts.chat ? `<a class="pill" href="${esc(opts.chat)}" aria-label="${esc(s.openChat)}">${icon("chat", 16)} ${esc(s.chat)}</a>` : ""
-      }</header>`;
+    : `<header class="top"><a class="logo" href="${base || "#"}"><span class="moon"></span><span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(s.sail)}</small></span></a><div class="topr">${
+        opts.token
+          ? `<form method="post" action="${base}/lang"><input type="hidden" name="to" value="${opts.lang === "es" ? "en" : "es"}"><button class="pill" hreflang="${opts.lang === "es" ? "en" : "es"}">🌐 ${opts.lang === "es" ? "English" : "Español"}</button></form>`
+          : ""
+      }${opts.chat ? `<a class="pill" href="${esc(opts.chat)}" aria-label="${esc(s.openChat)}">${icon("chat", 16)} ${esc(s.chat)}</a>` : ""}</div></header>`;
   return `<!doctype html><html lang="${opts.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1f3f"><title>${esc(title)} · ${esc(SHIP_NAME)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -503,6 +506,14 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
       const vibe = f.get("vibe");
       if (vibe && vibe !== "none") await tools.generate_flyer.run({ activity_id: id, vibe });
       back(`/a/${id}`, out);
+      return true;
+    }
+    if (sub === "/lang") {
+      // The header's language switch: the passenger's language everywhere (web, chat, calls), back to the same page.
+      const to = f.get("to") === "en" ? "en" : "es";
+      if (to !== viewer.language) await deps.store.updatePerson(viewer.id, { language: to });
+      const from = String(req.headers.referer ?? "").match(new RegExp(`^https?://[^/]+(/c/${token.replace(/[.]/g, "\\.")}(?:/[^?#]*)?)`))?.[1];
+      redirect(res, from ?? `/c/${token}`);
       return true;
     }
     if (sub === "/settings") {

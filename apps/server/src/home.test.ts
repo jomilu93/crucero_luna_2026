@@ -50,9 +50,14 @@ describe("the website as the front door", () => {
     expect(es).toMatch(/<form class="joinbox" method="post" action="\/join">/);
     expect(es).toContain("Código del barco");
     expect(es).not.toContain("Sofía"); // the public page names nobody
-    const en = await (await fetch(`${base}/?lang=en`)).text();
-    expect(en).toContain("Join the cruise");
-    expect(await (await fetch(`${base}/`, { headers: { "Accept-Language": "en-US,en;q=0.9" } })).text()).toContain("What happens on board?");
+    // Mexican Spanish even for an English browser; the switch (top right) picks English and is remembered.
+    const browserEn = await (await fetch(`${base}/`, { headers: { "Accept-Language": "en-US,en;q=0.9" } })).text();
+    expect(browserEn).toContain("¿Qué pasa a bordo?");
+    expect(browserEn).toContain('href="/?home&lang=en"');
+    const picked = await fetch(`${base}/?home&lang=en`);
+    expect(await picked.text()).toContain("Join the cruise");
+    expect(picked.headers.get("set-cookie")).toMatch(/cl_lang=en/);
+    expect(await (await fetch(`${base}/`, { headers: { Cookie: "cl_lang=en" } })).text()).toContain("What happens on board?");
   });
 
   it("boards a passenger with name, number and the family code, and remembers the browser", async () => {
@@ -130,6 +135,15 @@ describe("the website as the front door", () => {
     expect(decodeURIComponent((await form({ phone: "55 1234 5678" })).headers.get("location")!)).toContain("Ese número ya es de otro pasajero");
     await form({ phone: "55 7777 8888" });
     expect((await store.getPerson("sofia"))!.contactPhone).toBe("+525577778888");
+    // The header's language switch changes the passenger's language and returns to the same page.
+    expect(await (await fetch(`${base}/c/${t}/program`)).text()).toContain("🌐 English");
+    const sw = await fetch(`${base}/c/${t}/lang`, { method: "POST", redirect: "manual", headers: { "Content-Type": "application/x-www-form-urlencoded", Referer: `${base}/c/${t}/program?date=2026-12-27` }, body: "to=en" });
+    expect(sw.headers.get("location")).toBe(`/c/${t}/program`);
+    expect((await store.getPerson("sofia"))!.language).toBe("en");
+    expect(await (await fetch(`${base}/c/${t}`)).text()).toContain("🌐 Español");
+    await fetch(`${base}/c/${t}/lang`, { method: "POST", redirect: "manual", headers: { "Content-Type": "application/x-www-form-urlencoded", Referer: "https://evil.example/x" }, body: "to=es" }).then((r) =>
+      expect(r.headers.get("location")).toBe(`/c/${t}`),
+    );
     const out = await fetch(`${base}/logout`, { method: "POST", redirect: "manual" });
     expect(out.headers.get("set-cookie")).toMatch(/cl_cabin=; Path=\/; Max-Age=0/);
   });
