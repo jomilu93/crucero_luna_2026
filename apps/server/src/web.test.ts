@@ -96,6 +96,58 @@ describe("web app and TV routes", () => {
     expect([...new Uint8Array(await img.arrayBuffer())].slice(0, 4)).toEqual(PNG);
   });
 
+  it("lets the host (or an admin) edit an activity, and nobody else", async () => {
+    const bingo = { ...(await store.getActivity("a04"))! }; // a copy: the memory store hands out live objects
+    const page = async (id: string) => (await fetch(`${base}/c/${await token(id)}/a/a04`)).text();
+    expect(await page("ricardo")).toContain("Editar detalles");
+    expect(await page("ricardo")).toContain('value="Comedor (Gran Salón)"');
+    expect(await page("valeria")).not.toContain("Editar detalles");
+    const form = { title: "Bingo Lunático XL", emoji: "🎰", date: "2026-12-27", start: "20:30", end: "22:00", location: "Lido Deck", description: "", capacity: "25", bring: "Monedas" };
+    const nope = await post(`/c/${await token("valeria")}/a/a04/edit`, form);
+    expect(decodeURIComponent(nope.headers.get("location")!)).toContain("NOT ALLOWED");
+    expect((await store.getActivity("a04"))!.title).toBe(bingo.title);
+    const ok = await post(`/c/${await token("ricardo")}/a/a04/edit`, form);
+    expect(decodeURIComponent(ok.headers.get("location")!)).toContain("Listo.");
+    expect(await store.getActivity("a04")).toMatchObject({ title: "Bingo Lunático XL", emoji: "🎰", location: "Lido Deck", capacity: 25, bring: "Monedas", startsAt: mx("2026-12-27", "20:30"), endsAt: mx("2026-12-27", "22:00") });
+    // An admin can fix anyone's mistake.
+    await store.updatePerson("valeria", { admin: true });
+    await post(`/c/${await token("valeria")}/a/a04/edit`, { ...form, title: bingo.title, emoji: bingo.emoji, start: "20:00", end: "21:30", location: bingo.location, capacity: "20", bring: bingo.bring! });
+    await store.updatePerson("valeria", { admin: false });
+    expect(await store.getActivity("a04")).toMatchObject({ title: bingo.title, location: bingo.location, startsAt: bingo.startsAt, endsAt: bingo.endsAt });
+  });
+
+  it("runs conchitas on the web: the host ticks who came, a guest confirms, the chest and the admin list show it", async () => {
+    // NOW is Dec 27, 7:30 pm: Sofía's 7:00 am yoga (a03, Diego and Valeria going) is over; bingo (a04) hasn't started.
+    const yoga = async (id: string) => (await fetch(`${base}/c/${await token(id)}/a/a03`)).text();
+    expect(await yoga("sofia")).toContain("¿Quién vino?");
+    expect(await yoga("sofia")).toMatch(/name="came" value="diego"/);
+    expect(await yoga("diego")).toContain("Did it happen?"); // Diego reads English
+    expect(await yoga("valeria")).toContain("¿Se hizo?");
+    expect(await yoga("carmen")).not.toContain("¿Se hizo?"); // didn't sign up
+    expect(await (await fetch(`${base}/c/${await token("ricardo")}/a/a04`)).text()).not.toContain("¿Quién vino?"); // not yet
+
+    const tick = await post(`/c/${await token("sofia")}/a/a03/attendance`, { listed: "diego", came: "diego" });
+    expect(decodeURIComponent(tick.headers.get("location")!)).toContain("Listo.");
+    // Unticking works too: Valeria listed but not ticked stays off, and "add" brings in Carmen.
+    const body = new URLSearchParams([["listed", "diego"], ["came", "diego"], ["listed", "valeria"], ["add", "carmen"]]).toString();
+    await fetch(`${base}/c/${await token("sofia")}/a/a03/attendance`, { method: "POST", redirect: "manual", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+    expect((await store.listAttendance("a03")).filter((r) => r.hostConfirmedAt).map((r) => r.personId).sort()).toEqual(["carmen", "diego"]);
+    expect(decodeURIComponent((await post(`/c/${await token("diego")}/a/a03/attendance`, { listed: "valeria", came: "valeria" })).headers.get("location")!)).toContain("NOT ALLOWED");
+
+    await post(`/c/${await token("diego")}/a/a03/confirm`, {});
+    expect(await yoga("diego")).toContain("✓ You confirmed it happened");
+    const chest = await (await fetch(`${base}/c/${await token("sofia")}/tesoro`)).text();
+    expect(chest).toMatch(/<div class="n">30<\/div>/);
+    expect(chest).toContain("Canjéalas en persona en la Tienda del Crucero");
+    const home = await (await fetch(`${base}/c/${await token("diego")}`)).text();
+    expect(home).toMatch(/class="card chest"[^]*?<b>10<\/b>/);
+
+    await store.updatePerson("valeria", { admin: true });
+    const admin = await (await fetch(`${base}/c/${await token("valeria")}/admin`)).text();
+    await store.updatePerson("valeria", { admin: false });
+    expect(admin).toMatch(/Sofía Luna[^]*?🐚 30/);
+  });
+
   it("saves settings", async () => {
     const t = await token("ricardo");
     await post(`/c/${t}/settings`, { language: "en", humor: "light", wake: "08:15", quiet_start: "22:00", quiet_end: "08:00", muted: "on" });

@@ -20,7 +20,19 @@ import { normalizePhone } from "@crucero/db";
 import { phoneBridgePage } from "./bridge.js";
 import type { VoiceService } from "./voice.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { CAPTAIN_NAME, type FlyerMaker, type Outbox, SHIP_FORMER_NAME, SHIP_NAME, VOYAGE_NAME, buildTools, headlineFor } from "@crucero/agent";
+import {
+  CAPTAIN_NAME,
+  CONCHITAS,
+  type FlyerMaker,
+  type Outbox,
+  SHIP_FORMER_NAME,
+  SHIP_NAME,
+  VOYAGE_NAME,
+  buildTools,
+  canManage as canManageActivity,
+  chestFor,
+  headlineFor,
+} from "@crucero/agent";
 import {
   type Activity,
   type Person,
@@ -34,6 +46,7 @@ import {
   prettyDate,
   prettyTime,
   shipDate,
+  shipTime,
 } from "@crucero/db";
 
 export interface WebDeps {
@@ -46,6 +59,8 @@ export interface WebDeps {
   botUsername?: () => string | undefined;
   /** Live video calls with the Capitán (voice.ts), when configured. */
   voice?: VoiceService;
+  /** The ship's WhatsApp number (E.164) for wa.me links, when WhatsApp is on. */
+  whatsappNumber?: string;
   /** BOARDING_CODE: the family's code for joining on the website (unset: anyone with the link can join). */
   boardingCode?: string;
   /** ADMIN_PASSWORD: typed as the code on the join form, it boards the passenger as an admin. */
@@ -81,6 +96,14 @@ export function verifyChatLink(secret: string, code: string): string | undefined
   const want = Buffer.from(chatLinkCode(secret, { id }));
   const got = Buffer.from(code);
   return want.length === got.length && timingSafeEqual(want, got) ? id : undefined;
+}
+
+/** WhatsApp link for this passenger: the chat if it is connected, else a prefilled message carrying their connect code. */
+export function whatsappUrl(deps: Pick<WebDeps, "secret">, number: string, p: Person): string {
+  const wa = number.replace(/\D/g, "");
+  if (p.phoneE164?.startsWith("+")) return `https://wa.me/${wa}`;
+  const hello = p.language === "en" ? "Hi Capitán 👋" : "Hola Capitán 👋";
+  return `https://wa.me/${wa}?text=${encodeURIComponent(`${hello} (código link_${chatLinkCode(deps.secret, p)})`)}`;
 }
 
 /** Telegram deep link for this passenger: their chat if it is already connected, else "connect this chat". */
@@ -142,6 +165,13 @@ const T = {
     agentBtn: "Configurar agente de voz", agentRedo: "Volver a configurar", voiceId: "ID de voz", voiceHelp: "Elige una voz en español en la biblioteca de ElevenLabs y pega su ID.",
     diagnose: "Diagnóstico de llamadas", diagnoseHelp: "Revisa la configuración real del agente en ElevenLabs y por qué terminaron las últimas llamadas.", diagnoseBtn: "Diagnosticar",
     testCall: "Probar llamada", portraits: "Retratos del Capitán", avatarHelp: "Pinta retratos y elige uno: se convierte en su avatar en vivo.",
+    edit: "Editar detalles", saveChanges: "Guardar cambios",
+    chest: "Tu cofre", conchitas: "conchitas", toDo: "por confirmar", whoCame: "¿Quién vino?", whoCameSub: "Marca a quien vino: cada uno gana 10 conchitas.",
+    addSomeone: "Agregar a alguien más", saveAttendance: "Guardar asistencia", didItHappen: "¿Se hizo?", confirmBtn: "✓ Sí, se hizo", confirmed: "✓ Confirmaste que se hizo",
+    confirmSub: "Confírmalo y el anfitrión gana 30 conchitas.", yours: "Tus 10 conchitas", earnedLbl: "ganadas", waitingHost: "cuando el anfitrión confirme que fuiste",
+    waitingGuests: "cuando un invitado confirme que se hizo", hostedLbl: "Organizaste", wentLbl: "Fuiste a",
+    howEarn: "Organizar una actividad: 30 conchitas, cuando un invitado confirma que se hizo. Ir a una: 10, cuando el anfitrión confirma que fuiste.",
+    storeNote: "Canjéalas en persona en la Tienda del Crucero.", yourTurn: "Te toca", history: "Historial", noConchitas: "Todavía no hay conchitas: apúntate a algo u organiza tú.",
     welcome: "¡Bienvenido a bordo!", talkTitle: "Habla con el Capitán", talkSub: "Todo se puede hacer aquí en la web. Si prefieres, también por chat o videollamada.",
     viaWeb: "Aquí en la web", viaWebSub: "Programa, apuntarte y organizar: ya estás aquí.", viaTg: "Telegram", viaTgOn: "Conectado: ahí te llega tu programa cada mañana y tus recordatorios.",
     viaTgOff: "Conéctalo para recibir tu programa cada mañana, recordatorios y chatear con él.", connect: "Conectar", open: "Abrir",
@@ -174,6 +204,13 @@ const T = {
     agentBtn: "Set up the voice agent", agentRedo: "Set it up again", voiceId: "Voice ID", voiceHelp: "Pick a Spanish voice in the ElevenLabs voice library and paste its ID.",
     diagnose: "Call diagnostics", diagnoseHelp: "Checks the agent's real configuration on ElevenLabs and why the last calls ended.", diagnoseBtn: "Diagnose",
     testCall: "Test call", portraits: "The Capitán's portraits", avatarHelp: "Paint portraits and pick one: it becomes his live avatar.",
+    edit: "Edit details", saveChanges: "Save changes",
+    chest: "Your treasure chest", conchitas: "sand dollars", toDo: "to confirm", whoCame: "Who came?", whoCameSub: "Tick who came: each one earns 10 sand dollars.",
+    addSomeone: "Add someone else", saveAttendance: "Save attendance", didItHappen: "Did it happen?", confirmBtn: "✓ Yes, it happened", confirmed: "✓ You confirmed it happened",
+    confirmSub: "Confirm it and the host earns 30 sand dollars.", yours: "Your 10 sand dollars", earnedLbl: "earned", waitingHost: "once the host confirms you came",
+    waitingGuests: "once a guest confirms it happened", hostedLbl: "You hosted", wentLbl: "You went to",
+    howEarn: "Hosting an activity: 30 sand dollars, once a guest confirms it happened. Going to one: 10, once the host confirms you came.",
+    storeNote: "Spend them in person at the Cruise Store.", yourTurn: "Your turn", history: "History", noConchitas: "No sand dollars yet: sign up for something or host one.",
     welcome: "Welcome aboard!", talkTitle: "Talk to the Capitán", talkSub: "You can do everything right here on the web. If you prefer, also by chat or video call.",
     viaWeb: "Right here on the web", viaWebSub: "Program, sign-ups and hosting: you're already here.", viaTg: "Telegram", viaTgOn: "Connected: your morning program and reminders arrive there.",
     viaTgOff: "Connect it to get your morning program, reminders, and to chat with him.", connect: "Connect", open: "Open",
@@ -334,6 +371,11 @@ details.card summary .ic.go{margin-left:auto;transition:transform .2s}details[op
 .ok{color:var(--ok);font-weight:700}.diag{white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:12px;padding:10px;margin:10px 0 0}.no{color:var(--warn);font-weight:700}
 .empty{text-align:center;padding:28px 18px;color:var(--muted)}.empty .e{font-size:40px}
 .btn.small{padding:9px 12px;font-size:14px;border-radius:12px;flex:none}
+.chest{display:flex;gap:14px;align-items:center;padding:14px 16px;text-decoration:none;color:#4a3200;background:linear-gradient(135deg,#ffe7a3,#f2b632)}
+.chest .shell{font-size:34px;line-height:1}.chest .grow{flex:1}.chest b{font-size:26px}.chest .m{color:#6b4a00}.chest .ic.go{color:#6b4a00}
+.chestbig{text-align:center;padding:22px 16px}.chestbig .n{font-size:56px;font-weight:800;line-height:1;color:#8a5a00}
+@media (prefers-color-scheme:dark){.chestbig .n{color:#f2c75c}}
+.attend label.check{margin:10px 0 0}
 @media (min-width:900px){.app,.tabs .in{max-width:760px}.cta .in{max-width:728px}.tile{flex-basis:44%}.feature .cover{height:240px}}
 `;
 
@@ -463,7 +505,10 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
   const bot = deps.botUsername?.();
   const flash = url.searchParams.get("ok") ?? undefined;
   const admin = viewer.admin === true;
-  const chat = bot ? chatUrl(deps, bot, viewer) : undefined;
+  // The chat button opens the channel they already use; otherwise WhatsApp (the main one), else Telegram.
+  const wa = deps.whatsappNumber ? whatsappUrl(deps, deps.whatsappNumber, viewer) : undefined;
+  const tg = bot ? chatUrl(deps, bot, viewer) : undefined;
+  const chat = viewer.phoneE164?.startsWith("tg:") ? (tg ?? wa) : (wa ?? tg);
   const opts = (on: Tab, extra: { cta?: string } = {}) => ({ lang, token, on, flash, chat, admin, ...extra });
   const tools = Object.fromEntries(
     buildTools({ store: deps.store, passenger: viewer, now, outbox: deps.outbox, channel: "web", flyers: deps.flyers }).map((t) => [t.name, t]),
@@ -474,6 +519,43 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
   // ----- writes -----
   if (req.method === "POST") {
     const f = await readForm(req);
+    const att = sub.match(/^\/a\/([A-Za-z0-9-]+)\/(attendance|confirm)$/);
+    if (att) {
+      const [, id, what] = att;
+      if (what === "confirm") {
+        back(`/a/${id}`, await tools.confirm_event.run({ activity_id: id }));
+        return true;
+      }
+      // The host's checklist: ticked people came, unticked listed ones didn't; "add" brings in someone not signed up.
+      const came = new Set(f.getAll("came"));
+      const listed = f.getAll("listed");
+      const add = f.get("add");
+      // Passenger ids, not names: two Sofías must never be confused.
+      const yes = [...listed.filter((pid) => came.has(pid)), ...(add ? [add] : [])];
+      const no = listed.filter((pid) => !came.has(pid));
+      let out: string = s.saved;
+      if (yes.length) out = await tools.mark_attendance.run({ activity_id: id, people: yes });
+      if (no.length && !/^(NOT|ERROR)/.test(out)) out = await tools.mark_attendance.run({ activity_id: id, people: no, attended: false });
+      back(`/a/${id}`, out);
+      return true;
+    }
+    const edit = sub.match(/^\/a\/([A-Za-z0-9-]+)\/edit$/);
+    if (edit) {
+      const out = await tools.update_activity.run({
+        activity_id: edit[1],
+        title: f.get("title") || undefined,
+        emoji: f.get("emoji") || undefined,
+        date: f.get("date") || undefined,
+        start_time: f.get("start") || undefined,
+        end_time: f.get("end") || undefined,
+        location: f.get("location") || undefined,
+        description: f.get("description") || undefined,
+        capacity: f.get("capacity") ? Number(f.get("capacity")) : undefined,
+        bring: f.get("bring") || undefined,
+      });
+      back(`/a/${edit[1]}`, out);
+      return true;
+    }
     const act = sub.match(/^\/a\/([A-Za-z0-9-]+)\/(signup|cancel|flyer)$/);
     if (act) {
       const [, id, action] = act;
@@ -627,17 +709,22 @@ ${chat ? `<a href="${esc(chat)}"><span class="q">${icon("chat", 24)}</span>${s.c
       ? `<a class="card callcard" href="/c/${esc(token)}/bridge">${voice.portraitUrl ? `<img src="${esc(voice.portraitUrl)}" alt="">` : `<span class="ph">🧑‍✈️</span>`}<div class="grow"><div class="t">📞 ${s.callTitle}</div><div class="m">${s.callSub}</div></div>${icon("chevron", 18, "ic go")}</a>`
       : "";
     const tgOn = !!viewer.phoneE164?.startsWith("tg:");
+    const waOn = !!viewer.phoneE164?.startsWith("+");
     const row = (ic: string, title: string, subline: string, action: string) =>
       `<div class="item">${icon(ic, 22)}<div class="grow"><div class="tt">${title}</div><div class="m">${subline}</div></div>${action}</div>`;
     const welcome = url.searchParams.get("welcome") === "1";
     const talk =
-      welcome || !tgOn
+      welcome || !(tgOn || waOn)
         ? `${welcome ? `<h2 class="sec">${s.welcome} 🎉</h2>` : `<h2 class="sec">${s.talkTitle}</h2>`}<div class="card"><div class="pad" style="padding-bottom:4px"><div class="m">${s.talkSub}</div></div><div class="list">
 ${row("home", s.viaWeb, s.viaWebSub, `<span class="ok">✓</span>`)}
-${chat ? row("chat", s.viaTg, tgOn ? s.viaTgOn : s.viaTgOff, `<a class="btn small${tgOn ? " alt" : ""}" href="${esc(chat)}">${tgOn ? s.open : s.connect}</a>`) : ""}
+${wa ? row("chat", s.viaWa, waOn ? s.viaTgOn : s.viaTgOff, `<a class="btn small${waOn ? " alt" : ""}" href="${esc(wa)}">${waOn ? s.open : s.connect}</a>`) : ""}
+${tg ? row("chat", s.viaTg, tgOn ? s.viaTgOn : s.viaTgOff, `<a class="btn small${tgOn ? " alt" : ""}" href="${esc(tg)}">${tgOn ? s.open : s.connect}</a>`) : ""}
 ${voice?.ready ? row("video", s.viaCall, s.viaCallSub, `<a class="btn small alt" href="/c/${esc(token)}/bridge">📞</a>`) : ""}
-${row("chat", s.viaWa, s.soon, `<span class="badge">${s.soon}</span>`)}</div></div>`
+${wa ? "" : row("chat", s.viaWa, s.soon, `<span class="badge">${s.soon}</span>`)}</div></div>`
         : "";
+    const chest = await chestFor(deps.store, viewer, now);
+    const todo = chest.toConfirm.length + chest.toMark.length;
+    const chestCard = `<a class="card chest" href="/c/${esc(token)}/tesoro"><span class="shell">🐚</span><div class="grow"><div class="m">${s.chest}</div><b>${chest.balance}</b> ${s.conchitas}${todo ? ` · <span class="badge gold">${todo} ${s.toDo}</span>` : ""}</div>${icon("chevron", 18, "ic go")}</a>`;
     const nextBlock = next ? `<h2 class="sec">${s.nextUp}</h2>${await activityFeature(deps, next, viewer, token, s, { showDate: true })}` : "";
     const rest = upcoming.slice(next ? 1 : 0);
     const plan = upcoming.length
@@ -669,7 +756,22 @@ ${row("chat", s.viaWa, s.soon, `<span class="badge">${s.soon}</span>`)}</div></d
 <form method="post" action="/logout" class="actions"><button class="small ghost">${s.logout}</button></form></div></details>
 <div class="card list"><a class="item" href="${esc(deps.publicUrl)}/cal/${esc(viewer.icsToken)}.ics">${icon("calendar")}<div class="grow"><div class="tt">${s.calendar}</div><div class="m">.ics · iPhone / Google</div></div>${icon("chevron", 18, "ic go")}</a></div>`;
 
-    html(res, 200, page(s.myCruise, `<section class="hero has-mp"><div class="moon"></div><img class="manpaty" src="/manpaty.svg${sailMs > 0 || dayIdx < 0 ? "" : "?pose=cheer"}" alt="Manpaty">${hero}<div class="formerly">${esc(SHIP_NAME)} · ${lang === "es" ? "anteriormente" : "formerly"} ${esc(SHIP_FORMER_NAME)}</div></section>${quick}${welcome ? talk : ""}${callCard}${welcome ? "" : talk}${nextBlock}${plan}${tiles}<div style="height:12px"></div>${settings}`, opts("")));
+    html(res, 200, page(s.myCruise, `<section class="hero has-mp"><div class="moon"></div><img class="manpaty" src="/manpaty.svg${sailMs > 0 || dayIdx < 0 ? "" : "?pose=cheer"}" alt="Manpaty">${hero}<div class="formerly">${esc(SHIP_NAME)} · ${lang === "es" ? "anteriormente" : "formerly"} ${esc(SHIP_FORMER_NAME)}</div></section>${quick}${welcome ? talk : ""}${chestCard}${callCard}${welcome ? "" : talk}${nextBlock}${plan}${tiles}<div style="height:12px"></div>${settings}`, opts("")));
+    return true;
+  }
+
+  if (sub === "/tesoro") {
+    const chest = await chestFor(deps.store, viewer, now);
+    const link = (x: Activity, label: string) => `<a class="item" href="/c/${esc(token)}/a/${esc(x.id)}">${cover(x, "thumb cover")}<div class="grow"><div class="tt">${esc(x.title)}</div><div class="m">${label}</div></div>${icon("chevron", 18, "ic go")}</a>`;
+    const todo = [...chest.toMark.map((x) => link(x, `🐚 ${s.whoCame}`)), ...chest.toConfirm.map((x) => link(x, `🐚 ${s.didItHappen}`))];
+    const history = chest.lines.map((l) =>
+      link(l.activity, `${l.role === "host" ? s.hostedLbl : s.wentLbl} · ${l.amount} ${s.conchitas} · ${l.earned ? `<span class="ok">✓ ${s.earnedLbl}</span>` : l.role === "host" ? s.waitingGuests : s.waitingHost}`),
+    );
+    const body = `<section class="card chestbig"><div style="font-size:44px">🐚</div><div class="n">${chest.balance}</div><div class="t">${s.conchitas}</div><div class="m" style="margin-top:8px">${s.storeNote}</div></section>
+${todo.length ? `<h2 class="sec">${s.yourTurn}</h2><div class="card list">${todo.join("")}</div>` : ""}
+<h2 class="sec">${s.history}</h2>${history.length ? `<div class="card list">${history.join("")}</div>` : `<div class="card empty"><img class="mp" src="/manpaty.svg" alt="Manpaty">${s.noConchitas}</div>`}
+<div class="card pad m">${s.howEarn}</div>`;
+    html(res, 200, page(s.chest, body, opts(undefined)));
     return true;
   }
 
@@ -723,12 +825,49 @@ ${row("chat", s.viaWa, s.soon, `<span class="badge">${s.soon}</span>`)}</div></d
       return ps.length ? `<div class="faces">${ps.map((p) => `<span class="face">${avatar(p, 28)}${esc(p.name)}</span>`).join("")}</div>` : `<div class="m">${s.nobody}</div>`;
     };
     const mine = [...going, ...maybe].find((x) => x.personId === viewer.id)?.status;
-    const canManage = a.sponsorId === viewer.id || (!!host?.guardianId && host.guardianId === viewer.id);
+    const canManage = canManageActivity(viewer, a, host);
     const live = a.status !== "cancelled";
     const btn = (status: string, label: string, cls: string) =>
       `<form method="post" action="/c/${esc(token)}/a/${esc(a.id)}/signup"><input type="hidden" name="status" value="${status}"><button class="${cls}">${label}</button></form>`;
     const vibes = ["fiesta", "zen", "retro-cruise", "kids", "gala"];
     const date = shipDate(a.startsAt);
+    // Conchitas 🐚 once it has started: the host ticks who came, a guest confirms it happened.
+    const conchitaCards = async () => {
+      if (!live || a.startsAt > now.toISOString()) return "";
+      const rows = await deps.store.listAttendance(a.id);
+      const mineRow = rows.find((r) => r.personId === viewer.id);
+      const out: string[] = [];
+      if (canManage) {
+        const ids = [...new Set([...going, ...maybe].map((x) => x.personId).concat(rows.filter((r) => r.hostConfirmedAt).map((r) => r.personId)))].filter((pid) => pid !== a.sponsorId);
+        const listed = await people(ids.map((personId) => ({ personId })));
+        const others = (await deps.store.listPeople()).filter((p) => p.id !== a.sponsorId && !ids.includes(p.id) && p.phoneE164 !== "tv:bridge");
+        out.push(`<form class="card pad attend" method="post" action="/c/${esc(token)}/a/${esc(a.id)}/attendance"><div class="t" style="font-size:16px">🐚 ${s.whoCame}</div><div class="m">${s.whoCameSub}</div>
+${listed.map((p) => `<input type="hidden" name="listed" value="${esc(p.id)}"><label class="check"><input type="checkbox" name="came" value="${esc(p.id)}"${rows.some((r) => r.personId === p.id && r.hostConfirmedAt) ? " checked" : ""}> ${avatar(p, 28)} ${esc(p.name)}</label>`).join("")}
+${others.length ? `<label>${s.addSomeone}</label><select name="add"><option value="">—</option>${others.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select>` : ""}
+<div class="actions"><button style="flex:1">${s.saveAttendance}</button></div>
+<div class="m" style="margin-top:8px">${s.hostedLbl}: ${CONCHITAS.host} ${s.conchitas} ${rows.some((r) => r.personId !== a.sponsorId && r.guestConfirmedAt) ? `<span class="ok">✓ ${s.earnedLbl}</span>` : s.waitingGuests}</div></form>`);
+      }
+      const joined = [...going, ...maybe].some((x) => x.personId === viewer.id) || !!mineRow;
+      if (a.sponsorId !== viewer.id && joined) {
+        const mine = mineRow?.hostConfirmedAt ? `<span class="ok">✓ ${s.earnedLbl}</span>` : s.waitingHost;
+        out.push(
+          mineRow?.guestConfirmedAt
+            ? `<div class="card pad"><div class="t" style="font-size:16px">🐚 ${s.confirmed}</div><div class="m">${s.yours}: ${mine}</div></div>`
+            : `<form class="card pad" method="post" action="/c/${esc(token)}/a/${esc(a.id)}/confirm"><div class="t" style="font-size:16px">🐚 ${s.didItHappen}</div><div class="m">${s.confirmSub}</div><div class="actions"><button style="flex:1">${s.confirmBtn}</button></div><div class="m" style="margin-top:8px">${s.yours}: ${mine}</div></form>`,
+        );
+      }
+      return out.join("");
+    };
+    // The host fixes a mistake right here: every field prefilled, saved through update_activity like the chat.
+    const editForm = (a: Activity, date: string) => `<details class="card" id="edit"${url.searchParams.get("edit") === "1" ? " open" : ""}><summary>✏️ ${s.edit}${icon("chevron", 18, "ic go")}</summary><div class="pad">
+<form method="post" action="/c/${esc(token)}/a/${esc(a.id)}/edit">
+<div class="grid2" style="grid-template-columns:3fr 1fr"><div><label>${s.title}</label><input name="title" required minlength="3" maxlength="80" value="${esc(a.title)}"></div><div><label>${s.emoji}</label><input name="emoji" maxlength="8" value="${esc(a.emoji)}"></div></div>
+<label>${s.date}</label><select name="date">${cruiseDays().map((d) => `<option value="${d}"${d === date ? " selected" : ""}>${esc(prettyDate(d, lang))}</option>`).join("")}</select>
+<div class="grid2"><div><label>${s.start}</label><input type="time" name="start" required value="${esc(shipTime(a.startsAt))}"></div><div><label>${s.end}</label><input type="time" name="end" required value="${esc(shipTime(a.endsAt))}"></div></div>
+<label>${s.place}</label><input name="location" required maxlength="80" value="${esc(a.location)}">
+<label>${s.description}</label><textarea name="description" maxlength="400" rows="3">${esc(a.description ?? "")}</textarea>
+<div class="grid2"><div><label>${s.capacity}</label><input type="number" name="capacity" min="1" placeholder="∞" value="${esc(a.capacity ?? "")}"></div><div><label>${s.bring}</label><input name="bring" maxlength="120" value="${esc(a.bring ?? "")}"></div></div>
+<div class="actions"><button style="flex:1">${s.saveChanges}</button></div></form></div></details>`;
     const pct = a.capacity ? Math.min(100, Math.round((going.length / a.capacity) * 100)) : 0;
     const body = `<section class="ahero">${cover(a)}<a class="backbtn" href="/c/${esc(token)}/program?date=${date}" aria-label="${s.back}">${icon("back", 22)}</a>
 </section>
@@ -744,9 +883,12 @@ ${a.description || a.bring || a.cancelledReason ? `<div class="card pad"><div cl
 ${hasFlyer(a) ? `<div class="card"><img class="flyerimg" src="${esc(a.flyerUrl)}" alt="${s.flyer}"></div>` : ""}
 ${live ? `<form class="card pad" method="post" action="/c/${esc(token)}/a/${esc(a.id)}/flyer" onsubmit="this.querySelector('button').textContent='${s.working}'"><div class="t" style="font-size:16px">${s.flyer}</div>
 <div class="actions"><select name="vibe" style="flex:1">${vibes.map((v) => `<option>${v}</option>`).join("")}</select><button class="alt">${s.makeFlyer}</button></div></form>` : ""}
+${await conchitaCards()}
+${canManage && live ? editForm(a, date) : ""}
 ${canManage && live ? `<form class="card pad" method="post" action="/c/${esc(token)}/a/${esc(a.id)}/cancel"><div class="t" style="font-size:16px">${s.hostTools}</div><label>${s.reason}</label><input name="reason" required maxlength="200"><div class="actions"><button class="danger">${s.cancel}</button></div></form>` : ""}
 <div style="height:72px"></div>`;
-    const cta = live
+    // No sign-up bar once it's over: by then it's about who came (conchitas).
+    const cta = live && a.endsAt > now.toISOString()
       ? `<div class="cta"><div class="in">${btn("going", mine === "going" ? `✓ ${s.youreIn}` : s.imIn, mine === "going" ? "alt" : "")}${btn("maybe", s.maybeBtn, mine === "maybe" ? "" : "ghost")}${mine ? btn("out", s.out, "ghost") : ""}</div></div>`
       : "";
     html(res, 200, page(a.title, body, { ...opts(undefined), bare: true, cta }));
@@ -809,16 +951,20 @@ ${v.ready ? `<div class="actions"><a class="btn" href="/c/${esc(token)}/bridge">
 <form method="post" action="${a}/diagnose" class="actions" onsubmit="this.querySelector('button').textContent='…'"><button class="alt"${v.elevenLabs ? "" : " disabled"}>${s.diagnoseBtn}</button></form>
 ${diag ? `<pre class="diag">${esc(diag.at.slice(11, 19))} UTC\n${diag.lines.map(esc).join("\n")}</pre>` : ""}</div>`;
     };
+    // Balances for whoever runs the cruise store in person.
+    const balances = new Map(await Promise.all(everyone.map(async (p) => [p.id, (await chestFor(deps.store, p, now)).balance] as const)));
     const rows = everyone
       .map((p) => {
         const channel = [p.phoneE164?.startsWith("tg:") ? "Telegram" : p.phoneE164 ? `WhatsApp ${p.phoneE164}` : s.noChat, p.contactPhone && p.contactPhone !== p.phoneE164 ? p.contactPhone : ""]
           .filter(Boolean)
           .join(" · ");
         const hosts = acts.filter((a) => a.sponsorId === p.id).length;
+        const shells = balances.get(p.id) ?? 0;
         const badges = [
           p.admin ? `<span class="badge gold">ADMIN</span>` : "",
           p.role === "kid" ? `<span class="badge">${s.kid}${p.guardianId ? ` · ${esc(names.get(p.guardianId) ?? "")}` : ""}</span>` : "",
           p.muted ? `<span class="badge warn">${s.muted}</span>` : "",
+          `<span class="badge gold">🐚 ${shells}</span>`,
         ].join(" ");
         const pid = esc(p.id);
         return `<details class="card"><summary>${avatar(p, 40)}<div style="flex:1;min-width:0"><div>${esc(p.name)} ${badges}</div><div class="m" style="font-weight:500">${esc(channel)} · ${s.joined} ${esc(p.joinedAt.slice(0, 10))}${hosts ? ` · ${s.hostsN} ${hosts}` : ""}</div></div>${icon("chevron", 18, "ic go")}</summary><div class="pad">

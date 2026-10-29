@@ -98,9 +98,37 @@ From the cabin, passengers do everything on the web, connect Telegram (WhatsApp 
 web is recognised when it first writes), or call the Bridge. Telegram-first passengers can add their number under
 Preferencias to sign in on the web. Migration `005_contact_phone.sql` adds the passenger's own number.
 
-With `TELEGRAM_BOT_TOKEN` set, Telegram wins over `META_*`/`TWILIO_*` and only `/webhooks/telegram` is live.
+With both `TELEGRAM_BOT_TOKEN` and `META_*` set, both channels run (see WhatsApp below); `TWILIO_*` is the
+WhatsApp alternative when `META_*` is unset.
 
-### Running the ship on Meta's Cloud API (parked)
+### WhatsApp with a new number (main channel, alongside Telegram)
+
+WhatsApp and Telegram run together: each passenger is messaged on the channel they connected (`RoutingOutbox`),
+announcements go to everyone on their own channel, and both webhooks are live. On the website the cabin offers
+**Conectar WhatsApp** first: a `wa.me` link with a prefilled "Hola Capitán 👋 (código link_…)" that attaches the
+chat to that passenger; someone writing from the number they joined with is recognised without it (WhatsApp's
+`+52 1 …` form included).
+
+1. **The number.** A SIM/eSIM or virtual number that has never been on WhatsApp (or was deleted from it) and can
+   receive an SMS or voice call. Don't install WhatsApp on it.
+2. **Meta app.** developers.facebook.com → the existing app (or a new Business app) → WhatsApp → **API Setup** →
+   **Add phone number**: create it in *our* Business portfolio (not the Twilio-made "SIVICO" WABA), display name
+   "Moonshine of the Seas" (or "Crucero Luna"), verify with the code. Note its **Phone Number ID** and the **WABA ID**.
+3. **Payment method** on that WABA (Business settings → WhatsApp accounts → Payment settings), or messages fail
+   with 131042. Replies within 24 h of a passenger's message are free.
+4. **Permanent token.** Business settings → System users → add an admin system user → assign the app and the WABA
+   (full control) → Generate token with `whatsapp_business_messaging` and `whatsapp_business_management`.
+5. **Webhook.** App → WhatsApp → Configuration → callback `https://crucero-luna-2026.fly.dev/webhooks/meta`,
+   verify token = `META_VERIFY_TOKEN`, subscribe the **messages** field. Then subscribe the WABA to the app:
+   `curl -X POST "https://graph.facebook.com/v22.0/<WABA_ID>/subscribed_apps" -H "Authorization: Bearer <token>"`.
+6. **Template.** WhatsApp Manager → Message templates → new **Utility** template `aviso_capitan`, language Spanish
+   (MEX), body `🚢 Aviso del Capitán Lunáticus: {{1}}` (sample: "En 30 minutos empieza el Bingo en el Gran Salón").
+   This carries reminders, mornings and conchitas questions to anyone who hasn't written in 24 hours.
+7. **GitHub secrets** → `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `META_APP_SECRET` (App settings → Basic),
+   `META_VERIFY_TOKEN`, `WHATSAPP_NUMBER` (e.g. `+5215512345678`), `META_TEMPLATE_NOTICE=aviso_capitan`
+   (`META_TEMPLATE_LANG` defaults to `es_MX`). Keep `TELEGRAM_BOT_TOKEN`. Run **Deploy to Fly**; `fly logs` shows
+   `outbox: whatsapp via meta cloud api … notice template aviso_capitan` and the CI **meta-doctor** job checks the
+   number, the WABA subscription and the webhook.
 
 Meta's free **test number** lets up to five verified phones talk to the Capitán before any real number exists.
 

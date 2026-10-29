@@ -14,12 +14,14 @@ import type {
   PersonPatch,
   Signup,
   SignupStatus,
+  Attendance,
 } from "./types.js";
 
 interface Snapshot {
   people: Person[];
   activities: Activity[];
   signups: Signup[];
+  attendance: Attendance[];
   memory: MemoryEntry[];
   messages: MessageLog[];
   conversations: Conversation[];
@@ -27,7 +29,7 @@ interface Snapshot {
   settings: Record<string, unknown>;
 }
 
-const empty = (): Snapshot => ({ people: [], activities: [], signups: [], memory: [], messages: [], conversations: [], deliveries: [], settings: {} });
+const empty = (): Snapshot => ({ people: [], activities: [], signups: [], attendance: [], memory: [], messages: [], conversations: [], deliveries: [], settings: {} });
 
 const normalize = (s: string) =>
   s
@@ -119,6 +121,7 @@ export class MemoryStore implements Store {
     const gone = new Set(this.data.activities.filter((a) => a.sponsorId === id).map((a) => a.id));
     this.data.activities = this.data.activities.filter((a) => !gone.has(a.id));
     this.data.signups = this.data.signups.filter((s) => s.personId !== id && !gone.has(s.activityId));
+    this.data.attendance = this.data.attendance.filter((x) => x.personId !== id && !gone.has(x.activityId));
     this.data.memory = this.data.memory.filter((m) => m.personId !== id);
     this.data.conversations = this.data.conversations.filter((c) => c.personId !== id);
     for (const m of this.data.messages) if (m.personId === id) delete m.personId;
@@ -170,6 +173,26 @@ export class MemoryStore implements Store {
     }
     this.persist();
     return s;
+  }
+  async listAttendance(activityId: string): Promise<Attendance[]> {
+    return this.data.attendance.filter((x) => x.activityId === activityId);
+  }
+  async listAttendanceForPerson(personId: string): Promise<Attendance[]> {
+    return this.data.attendance.filter((x) => x.personId === personId);
+  }
+  async setAttendance(activityId: string, personId: string, patch: { host?: boolean; guest?: boolean }): Promise<Attendance> {
+    let x = this.data.attendance.find((r) => r.activityId === activityId && r.personId === personId);
+    if (!x) {
+      x = { activityId, personId };
+      this.data.attendance.push(x);
+    }
+    const at = this.ts();
+    if (patch.host === true) x.hostConfirmedAt ??= at;
+    if (patch.host === false) delete x.hostConfirmedAt;
+    if (patch.guest === true) x.guestConfirmedAt ??= at;
+    if (patch.guest === false) delete x.guestConfirmedAt;
+    this.persist();
+    return { ...x };
   }
   async markReminded(activityId: string, personId: string, at: string): Promise<void> {
     const s = this.data.signups.find((x) => x.activityId === activityId && x.personId === personId);

@@ -99,6 +99,23 @@ describe("PgStore on a real Postgres (PGlite)", () => {
     expect((await store.listActivities({ status: ["cancelled"] }))[0].cancelledReason).toBe("lluvia");
   });
 
+  it("records attendance from both sides, keeping the first confirmation and allowing a withdrawal", async () => {
+    const [yoga] = await store.listActivities();
+    const host = await store.setAttendance(yoga.id, diego.id, { host: true });
+    expect(host.hostConfirmedAt).toBeDefined();
+    expect(host.guestConfirmedAt).toBeUndefined();
+    const both = await store.setAttendance(yoga.id, diego.id, { guest: true, host: true });
+    expect(both.hostConfirmedAt).toBe(host.hostConfirmedAt);
+    expect(both.guestConfirmedAt).toBeDefined();
+    const off = await store.setAttendance(yoga.id, diego.id, { host: false });
+    expect(off.hostConfirmedAt).toBeUndefined();
+    expect(off.guestConfirmedAt).toBe(both.guestConfirmedAt);
+    expect(await store.listAttendance(yoga.id)).toHaveLength(1);
+    expect((await store.listAttendanceForPerson(diego.id))[0].activityId).toBe(yoga.id);
+    await store.markDelivered("attendance_ask", `${yoga.id}:${diego.id}`);
+    expect(await store.wasDelivered("attendance_ask", `${yoga.id}:${diego.id}`)).toBe(true);
+  });
+
   it("upserts sign-ups and marks reminders", async () => {
     const [yoga] = await store.listActivities();
     await store.setSignup(yoga.id, diego.id, "maybe");
