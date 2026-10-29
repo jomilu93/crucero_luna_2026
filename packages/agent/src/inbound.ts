@@ -53,6 +53,8 @@ const ACTION_TOOLS = new Set([
   "send_message",
   "remember",
   "set_preferences",
+  "mark_attendance",
+  "confirm_event",
   "admin_remove_passenger",
   "admin_set_role",
   "admin_set_admin",

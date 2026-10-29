@@ -227,13 +227,14 @@ async function runTick() {
         store,
         outbox,
         useTemplates,
+        pageLink: (p, path) => `${cabinLink(p)}${path}`,
         log,
         writeMorning: async (person, date, at) => writeMorningMessage(client, store, await buildMorningBrief(store, person, date, at)),
       },
       now,
     );
-    if (report.mornings.length || report.reminders.length || report.sponsorNudges.length || report.errors.length) {
-      log(`tick: mornings=${report.mornings.length} reminders=${report.reminders.length} nudges=${report.sponsorNudges.length} errors=${report.errors.length}`);
+    if (report.mornings.length || report.reminders.length || report.sponsorNudges.length || report.attendanceAsks.length || report.errors.length) {
+      log(`tick: mornings=${report.mornings.length} reminders=${report.reminders.length} nudges=${report.sponsorNudges.length} conchitas=${report.attendanceAsks.length} errors=${report.errors.length}`);
       for (const e of report.errors) log(`tick error: ${e}`);
     }
   } finally {
