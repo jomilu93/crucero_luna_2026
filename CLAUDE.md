@@ -10,10 +10,12 @@ Family members sponsor activities, sign up for each other's, and get a hyped mor
 reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.ts` (+ `docs/persona.md`).
 
 ## Decisions already made (do not re-litigate without the owner)
-- **Channel:** **Telegram for now** (`apps/server/src/telegram.ts`, owner's call on 2026-10-19 after the WhatsApp number
-  turned out to sit in a Twilio-created SIVICO WABA whose inbound never reached our app). Meta Cloud API direct
-  (`meta.ts`) and Twilio (`twilio.ts`) stay in the code; `TELEGRAM_BOT_TOKEN` set → Telegram wins and only its webhook is live.
-  Revisit WhatsApp later with a clean number registered directly in our Meta app.
+- **Channels:** the **website** is the front door; **WhatsApp is the main chat, Telegram runs alongside** (owner's call
+  2026-10-29 after the family pilot; Telegram had been the only channel since 2026-10-19, when the old …0909 number
+  turned out to sit in a Twilio-created SIVICO WABA). `RoutingOutbox` (`routing.ts`) sends each passenger on their own
+  channel (`tg:` → Telegram, `+` → WhatsApp via Meta Cloud API `meta.ts`, Twilio `twilio.ts` as the alternative); every
+  configured channel's webhook is live. The owner is getting a **new number** registered directly in our Meta app
+  (README "WhatsApp with a new number"); the `META_TEMPLATE_NOTICE` template carries messages outside the 24 h window.
 - **Brain:** `claude-opus-5-5` via the Anthropic SDK beta Tool Runner, `effort: low` for chat, `medium` for the
   morning show; `claude-haiku-5-5` for the eval judge. Server-side `fallbacks: "default"`. Persona is a cached prefix.
 - **Store:** `Store` interface; `MemoryStore` (JSON file) for dev, `PgStore` (Supabase Postgres) for prod.
@@ -23,7 +25,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (155 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (167 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -107,7 +109,19 @@ WhatsApp soon); Preferencias takes a phone number. `resolvePassenger` matches a 
 Language: Mexican Spanish by default everywhere (the browser's language is ignored); "🌐 English" top right switches
 the home page (cookie `cl_lang`) and, in the cabin, the passenger's own language (`POST /c/<token>/lang`).
 
+**Family pilot feedback (2026-10-29):**
+- *Edit on the web:* "Editar detalles" on the activity page for the host, the host's guardian or an admin (`canManage`
+  now includes admins), through `update_activity` (which also takes the emoji). No sign-up bar once it's over.
+- *Conchitas 🐚 (sand dollars), owner's rules:* hosting 30 once a guest confirms it happened, going 10 once the host
+  confirms you came (`CONCHITAS` in `conchitas.ts`); confirmations by checkmark on the web, chat or call (tools
+  `mark_attendance`, `confirm_event`, `my_conchitas`); the context lists what to ask; the scheduler asks host and guests
+  15 min after the end (`attendance_ask`). Balances derive from `attendance` (migration 006). No store or wallet:
+  prizes are exchanged in person (the Admin tab shows balances). Eval: 59 cases (3 conchitas).
+- *WhatsApp:* see Channels above; the cabin offers "Conectar WhatsApp" (`wa.me` with a `link_<code>`), `WHATSAPP_NUMBER`.
+
 ## Next steps, in order
+0. **Owner:** new WhatsApp number → README "WhatsApp with a new number" (Meta app, payment method, system-user token,
+   webhook + WABA subscription, `aviso_capitan` template, GitHub secrets) → deploy → CI meta-doctor.
 1. **Owner:** Supabase project → `DATABASE_URL` (session pooler) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`;
    fal.ai → `FAL_KEY`; deploy; check `fly logs` (`store: postgres`, `media: supabase storage`, `flyers: flux…`,
    `TV mode: …`). Then a first real flyer, the TV on a screen, and the web link from the bot.

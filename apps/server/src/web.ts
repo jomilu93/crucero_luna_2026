@@ -59,6 +59,8 @@ export interface WebDeps {
   botUsername?: () => string | undefined;
   /** Live video calls with the Capitán (voice.ts), when configured. */
   voice?: VoiceService;
+  /** The ship's WhatsApp number (E.164) for wa.me links, when WhatsApp is on. */
+  whatsappNumber?: string;
   /** BOARDING_CODE: the family's code for joining on the website (unset: anyone with the link can join). */
   boardingCode?: string;
   /** ADMIN_PASSWORD: typed as the code on the join form, it boards the passenger as an admin. */
@@ -94,6 +96,14 @@ export function verifyChatLink(secret: string, code: string): string | undefined
   const want = Buffer.from(chatLinkCode(secret, { id }));
   const got = Buffer.from(code);
   return want.length === got.length && timingSafeEqual(want, got) ? id : undefined;
+}
+
+/** WhatsApp link for this passenger: the chat if it is connected, else a prefilled message carrying their connect code. */
+export function whatsappUrl(deps: Pick<WebDeps, "secret">, number: string, p: Person): string {
+  const wa = number.replace(/\D/g, "");
+  if (p.phoneE164?.startsWith("+")) return `https://wa.me/${wa}`;
+  const hello = p.language === "en" ? "Hi Capitán 👋" : "Hola Capitán 👋";
+  return `https://wa.me/${wa}?text=${encodeURIComponent(`${hello} (código link_${chatLinkCode(deps.secret, p)})`)}`;
 }
 
 /** Telegram deep link for this passenger: their chat if it is already connected, else "connect this chat". */
@@ -495,7 +505,10 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
   const bot = deps.botUsername?.();
   const flash = url.searchParams.get("ok") ?? undefined;
   const admin = viewer.admin === true;
-  const chat = bot ? chatUrl(deps, bot, viewer) : undefined;
+  // The chat button opens the channel they already use; otherwise WhatsApp (the main one), else Telegram.
+  const wa = deps.whatsappNumber ? whatsappUrl(deps, deps.whatsappNumber, viewer) : undefined;
+  const tg = bot ? chatUrl(deps, bot, viewer) : undefined;
+  const chat = viewer.phoneE164?.startsWith("tg:") ? (tg ?? wa) : (wa ?? tg);
   const opts = (on: Tab, extra: { cta?: string } = {}) => ({ lang, token, on, flash, chat, admin, ...extra });
   const tools = Object.fromEntries(
     buildTools({ store: deps.store, passenger: viewer, now, outbox: deps.outbox, channel: "web", flyers: deps.flyers }).map((t) => [t.name, t]),
@@ -696,16 +709,18 @@ ${chat ? `<a href="${esc(chat)}"><span class="q">${icon("chat", 24)}</span>${s.c
       ? `<a class="card callcard" href="/c/${esc(token)}/bridge">${voice.portraitUrl ? `<img src="${esc(voice.portraitUrl)}" alt="">` : `<span class="ph">🧑‍✈️</span>`}<div class="grow"><div class="t">📞 ${s.callTitle}</div><div class="m">${s.callSub}</div></div>${icon("chevron", 18, "ic go")}</a>`
       : "";
     const tgOn = !!viewer.phoneE164?.startsWith("tg:");
+    const waOn = !!viewer.phoneE164?.startsWith("+");
     const row = (ic: string, title: string, subline: string, action: string) =>
       `<div class="item">${icon(ic, 22)}<div class="grow"><div class="tt">${title}</div><div class="m">${subline}</div></div>${action}</div>`;
     const welcome = url.searchParams.get("welcome") === "1";
     const talk =
-      welcome || !tgOn
+      welcome || !(tgOn || waOn)
         ? `${welcome ? `<h2 class="sec">${s.welcome} 🎉</h2>` : `<h2 class="sec">${s.talkTitle}</h2>`}<div class="card"><div class="pad" style="padding-bottom:4px"><div class="m">${s.talkSub}</div></div><div class="list">
 ${row("home", s.viaWeb, s.viaWebSub, `<span class="ok">✓</span>`)}
-${chat ? row("chat", s.viaTg, tgOn ? s.viaTgOn : s.viaTgOff, `<a class="btn small${tgOn ? " alt" : ""}" href="${esc(chat)}">${tgOn ? s.open : s.connect}</a>`) : ""}
+${wa ? row("chat", s.viaWa, waOn ? s.viaTgOn : s.viaTgOff, `<a class="btn small${waOn ? " alt" : ""}" href="${esc(wa)}">${waOn ? s.open : s.connect}</a>`) : ""}
+${tg ? row("chat", s.viaTg, tgOn ? s.viaTgOn : s.viaTgOff, `<a class="btn small${tgOn ? " alt" : ""}" href="${esc(tg)}">${tgOn ? s.open : s.connect}</a>`) : ""}
 ${voice?.ready ? row("video", s.viaCall, s.viaCallSub, `<a class="btn small alt" href="/c/${esc(token)}/bridge">📞</a>`) : ""}
-${row("chat", s.viaWa, s.soon, `<span class="badge">${s.soon}</span>`)}</div></div>`
+${wa ? "" : row("chat", s.viaWa, s.soon, `<span class="badge">${s.soon}</span>`)}</div></div>`
         : "";
     const chest = await chestFor(deps.store, viewer, now);
     const todo = chest.toConfirm.length + chest.toMark.length;

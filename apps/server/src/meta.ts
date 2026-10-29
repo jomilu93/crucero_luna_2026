@@ -15,8 +15,12 @@ export interface MetaConfig {
   appSecret?: string;
   /** Graph API version. Meta retires versions roughly two years after release. */
   graphVersion?: string;
-  /** Approved template names by kind, plus their language code (e.g. es_MX). */
-  templates?: Partial<Record<TemplateKind, string>>;
+  /**
+   * Approved template names by kind, plus their language code (e.g. es_MX). `notice` is a utility template with one
+   * body variable ("Aviso del Capitán: {{1}}") that carries any message WhatsApp refuses as plain text because the
+   * passenger hasn't written in 24 hours (reminders, conchitas questions, announcements).
+   */
+  templates?: Partial<Record<TemplateKind | "notice", string>>;
   templateLanguage?: string;
   fetch?: typeof fetch;
   baseUrl?: string;
@@ -128,6 +132,25 @@ export function buttonTitle(s: string): string {
   return t.length <= 20 ? t : `${t.slice(0, 19)}…`;
 }
 
+/** A refused Graph API call. 131047: more than 24 hours since the passenger last wrote, so only templates go. */
+export class MetaError extends Error {
+  readonly code?: number;
+  constructor(
+    readonly status: number,
+    body: string,
+  ) {
+    super(`Meta ${status}: ${body.slice(0, 300)}`);
+    try {
+      this.code = (JSON.parse(body) as { error?: { code?: number } }).error?.code;
+    } catch {
+      // not JSON
+    }
+  }
+  get windowClosed(): boolean {
+    return this.code === 131047;
+  }
+}
+
 export class MetaWhatsAppOutbox implements TemplateOutbox {
   private readonly fetchFn: typeof fetch;
   private readonly endpoint: string;
@@ -151,21 +174,42 @@ export class MetaWhatsAppOutbox implements TemplateOutbox {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`Meta ${res.status}: ${text.slice(0, 300)}`);
+      throw new MetaError(res.status, text);
+    }
+  }
+
+  /** Plain text, or the notice template when WhatsApp says the 24-hour window is closed (error 131047). */
+  private async postText(wa: string, payload: Record<string, unknown>, text: string): Promise<void> {
+    try {
+      await this.post(wa, payload);
+    } catch (err) {
+      const notice = this.cfg.templates?.notice;
+      if (!(err instanceof MetaError) || !err.windowClosed || !notice) throw err;
+      // Template parameters can't hold newlines, tabs or long runs of spaces.
+      const flat = text.replace(/\s*\n+\s*/g, " · ").replace(/[\t ]{2,}/g, " ").slice(0, 1000);
+      await this.post(wa, {
+        type: "template",
+        template: { name: notice, language: { code: this.cfg.templateLanguage ?? "es_MX" }, components: [{ type: "body", parameters: [{ type: "text", text: flat }] }] },
+      });
     }
   }
 
   async send(to: Person | "everyone", text: string, opts?: { mediaUrl?: string }): Promise<void> {
-    const targets = to === "everyone" ? (await this.listPeople()).filter((p) => p.phoneE164 && !p.muted) : [to];
+    const targets = to === "everyone" ? (await this.listPeople()).filter((p) => this.canReach(p) && !p.muted) : [to];
     for (const p of targets) {
-      if (!p.phoneE164) continue;
-      const wa = e164ToWaId(p.phoneE164);
+      if (!this.canReach(p)) continue;
+      const wa = e164ToWaId(p.phoneE164!);
       if (opts?.mediaUrl && /^https?:/.test(opts.mediaUrl)) {
-        await this.post(wa, { type: "image", image: { link: opts.mediaUrl, caption: text.slice(0, 1024) } });
+        await this.postText(wa, { type: "image", image: { link: opts.mediaUrl, caption: text.slice(0, 1024) } }, text);
       } else {
-        await this.post(wa, { type: "text", text: { preview_url: false, body: text.slice(0, 4096) } });
+        await this.postText(wa, { type: "text", text: { preview_url: false, body: text.slice(0, 4096) } }, text);
       }
     }
+  }
+
+  /** WhatsApp numbers only: Telegram chats and the TV seat live elsewhere. */
+  canReach(to: Person): boolean {
+    return !!to.phoneE164?.startsWith("+");
   }
 
   /** Up to 3 quick-reply buttons under a short body (open-window messages only). */

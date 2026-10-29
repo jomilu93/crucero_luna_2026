@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { type Person, type Store, isPaused, shipDate } from "@crucero/db";
+import { type Person, type Store, isPaused, normalizePhone, shipDate } from "@crucero/db";
 import { MASCOT_NAME, SHIP_NAME } from "./brand.js";
 import { SIGNUP_BUTTON_PREFIX, deliverMorningFull, type TemplateOutbox } from "./scheduler.js";
 
@@ -139,7 +139,9 @@ export class ChatService {
     const existing = await this.store.findPersonByPhone(msg.phoneE164);
     if (existing) return { person: existing, isNew: false };
     // Joined on the website with this number and now writes on WhatsApp: the same passenger, now with a chat.
-    const byNumber = (await this.store.listPeople()).find((p) => p.contactPhone === msg.phoneE164 && !p.phoneE164);
+    // WhatsApp writes Mexican mobiles as +52 1 55…, the website as +52 55…: compare them normalized.
+    const number = msg.phoneE164.startsWith("+") ? normalizePhone(msg.phoneE164) : undefined;
+    const byNumber = number ? (await this.store.listPeople()).find((p) => p.contactPhone === number && !p.phoneE164) : undefined;
     if (byNumber) return { person: await this.store.updatePerson(byNumber.id, { phoneE164: msg.phoneE164 }), isNew: false };
     const person = await this.store.createPerson({
       name: msg.profileName?.trim() || "Pasajero sin nombre",
@@ -193,7 +195,11 @@ export class ChatService {
 
   /** Handle one inbound message end to end. Returns the text that was sent back (for logs/tests). */
   async handle(msg: InboundMessage): Promise<{ person: Person; reply?: string; releasedMorning: boolean }> {
-    const linkCode = msg.buttonPayload?.startsWith(CHAT_LINK_PREFIX) ? msg.buttonPayload.slice(CHAT_LINK_PREFIX.length) : undefined;
+    // A connect code arrives as a payload (Telegram's /start link_…) or inside the text the website prefilled for
+    // WhatsApp ("Hola Capitán 👋 (código link_…)").
+    const linkCode = msg.buttonPayload?.startsWith(CHAT_LINK_PREFIX)
+      ? msg.buttonPayload.slice(CHAT_LINK_PREFIX.length)
+      : msg.text.match(/\blink_([A-Za-z0-9_-]{20,})/)?.[1];
     const linkTo = linkCode ? this.verifyChatLink?.(linkCode) : undefined;
     if (linkTo) {
       const { person, linked } = await this.linkChat(msg.phoneE164, linkTo);
