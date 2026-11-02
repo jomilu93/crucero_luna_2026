@@ -309,6 +309,17 @@ describe("HTTP: custom LLM endpoint, TV pickup and the mic relay", () => {
     expect(page).toMatch(/@media \(min-aspect-ratio:1\/1\)\{[^}]*\}\.live video\{object-fit:contain\}/);
   });
 
+  it("takes the Capitán's photo upload from admins only", async () => {
+    const sofia = (await ctx.store.getPerson("sofia"))!;
+    const up = (t: string) => fetch(`${base}/c/${t}/admin/voice/upload`, { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: new Uint8Array([0xff, 0xd8, 0xff]) });
+    expect((await up(cabinToken(SECRET, sofia))).status).toBe(404); // not an admin
+    await ctx.store.updatePerson("sofia", { admin: true });
+    const res = await up(cabinToken(SECRET, (await ctx.store.getPerson("sofia"))!));
+    await ctx.store.updatePerson("sofia", { admin: false });
+    expect(res.status).toBe(400); // this test server has no media storage
+    expect(await res.json()).toEqual({ error: "no media storage configured" });
+  });
+
   it("starts a TV-mic call as the shared Bridge seat", async () => {
     const res = await fetch(`${base}/tv/${tvKey(SECRET)}/call`, { method: "POST" });
     expect(await res.json()).toEqual({ sessionToken: "anam_session" });
@@ -521,5 +532,64 @@ describe("the greeting", () => {
     expect(said).toBe(greetingFor(diego));
     expect(heard).toEqual([]);
     expect(greetingFor({ name: "Puente (TV)", language: "es", phoneE164: "tv:bridge" })).toMatch(/^¡Yiá sas! Aquí el Capitán Lunáticus/);
+  });
+});
+
+describe("the Capitán's face and his usage limits", () => {
+  const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+  const build = (anam: (url: string, body: any) => Response | undefined, eleven?: (url: string) => Response | undefined) => {
+    const store = new MemoryStore({ now: () => NOW });
+    seedSample(store);
+    const put: string[] = [];
+    const media = { put: async (key: string) => (put.push(key), `https://media.test/${key}`) };
+    const edits: { prompt: string; url: string }[] = [];
+    const images = { generate: async () => JPEG, edit: async (prompt: string, url: string) => (edits.push({ prompt, url }), JPEG) };
+    const base = fakeVendors().fetchFn;
+    const fetchFn = (async (url: string, init: RequestInit = {}) => {
+      const body = typeof init.body === "string" ? JSON.parse(init.body) : undefined;
+      return (url.includes("api.anam.ai") ? anam(url, body) : eleven?.(url)) ?? base(url, init);
+    }) as unknown as typeof fetch;
+    const chat = new ChatService(store, { respond: async (_p, t, h) => ({ text: t, history: h }) }, { send: async () => {} }, { now: () => NOW });
+    const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: { elevenLabsKey: "xi", anamKey: "an", agentId: "agent_1", avatarId: "avatar_1" }, fetch: fetchFn, images, media, now: () => NOW });
+    return { store, voice, put, edits };
+  };
+
+  it("takes an uploaded photo, dresses him as the Capitán keeping his face, and makes either one the avatar", async () => {
+    const { voice, put, edits, store } = build(() => undefined);
+    const photo = await voice.uploadPortrait(JPEG);
+    expect(photo).toMatch(/^https:\/\/media\.test\/captain\/photo-\d+\.jpg$/);
+    await expect(voice.uploadPortrait(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]))).rejects.toThrow(/JPEG, PNG or WebP/);
+    const dressed = await voice.captainify(photo);
+    expect(edits[0].url).toBe(photo);
+    expect(edits[0].prompt).toMatch(/captain's uniform.*Keep his face/);
+    expect((await voice.status()).portraits.slice(0, 2)).toEqual([dressed, photo]);
+    expect((await voice.status()).canEdit).toBe(true);
+    await voice.useAvatar(dressed);
+    expect(await store.getSetting("captain_portrait")).toBe(dressed);
+    expect(put).toHaveLength(2);
+  });
+
+  it("names the spent plan when Anam or ElevenLabs refuse a call, in the caller's language, and logs the vendor's words", async () => {
+    const anamSpent = build((url) => (url.endsWith("/session-token") ? new Response(JSON.stringify({ message: "Usage limit reached" }), { status: 403 }) : undefined));
+    const sofia = (await anamSpent.store.getPerson("sofia"))!;
+    await expect(anamSpent.voice.startCall(sofia)).rejects.toThrow(/se quedó sin minutos de video \(Anam\)/);
+    expect((await anamSpent.voice.diagnose()).join("\n")).toMatch(/call refused by Anam \(usage limit\): Anam session 403: \{"message":"Usage limit reached"\}/);
+
+    const elevenSpent = build(() => undefined, (url) => (url.includes("get-signed-url") ? new Response(JSON.stringify({ detail: { status: "quota_exceeded" } }), { status: 401 }) : undefined));
+    const diego = (await elevenSpent.store.getPerson("diego"))!;
+    await expect(elevenSpent.voice.startCall(diego)).rejects.toThrow(/ran out of voice credits \(ElevenLabs\)/);
+
+    const other = build((url) => (url.endsWith("/session-token") ? new Response("bad avatar", { status: 400 }) : undefined));
+    await expect(other.voice.startCall(sofia)).rejects.toThrow(/^Anam session 400: bad avatar$/);
+  });
+
+  it("shows ElevenLabs credits in the diagnosis, and the call pages explain a mid-call limit", async () => {
+    const { voice } = build(() => undefined, (url) =>
+      url.endsWith("/v1/user/subscription") ? new Response(JSON.stringify({ tier: "starter", character_count: 30000, character_limit: 30000, next_character_count_reset_unix: 1796000000 })) : undefined,
+    );
+    expect((await voice.diagnose()).join("\n")).toMatch(/elevenlabs plan: starter · 30000\/30000 credits used ✗ SPENT · resets 2026-/);
+    const page = phoneBridgePage({ lang: "es", base: "/c/x", name: "Sofía", ready: true });
+    expect(page).toContain("se quedó sin minutos de videollamada");
+    expect(page).toMatch(/usage\|limit\|quota\|credit\|exceed/);
   });
 });

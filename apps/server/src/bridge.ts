@@ -80,6 +80,9 @@ export function phoneBridgePage(o: PhoneBridgeOpts): string {
     end: es ? "Colgar" : "Hang up",
     network: es ? "Se cayó la conexión de video." : "The video connection dropped.",
     dropped: es ? "El Puente cortó la llamada." : "The Bridge ended the call.",
+    limit: es
+      ? "El Capitán salió del Puente un rato: el barco se quedó sin minutos de videollamada. Un admin puede recargar el plan; el chat sigue funcionando."
+      : "The Capitán is off the Bridge for now: the ship ran out of video-call minutes. An admin can top up the plan; the chat still works.",
     tvNote: es ? "Tu teléfono es el micrófono; el Capitán responde en la tele." : "Your phone is the mic; the Capitán answers on the TV.",
   };
   const face = o.portraitUrl ? `<img src="${esc(o.portraitUrl)}" alt="">` : `<div class="ph">🧑‍✈️</div>`;
@@ -125,6 +128,8 @@ const report = (event, code, details) =>
 function closed(code, details) {
   if (!client) return; // stopStreaming() fires CONNECTION_CLOSED again; report each call's end once
   report("closed", code, details);
+  // A spent plan (Anam minutes, ElevenLabs credits) cuts the call with a technical message: say it plainly.
+  if (/usage|limit|quota|credit|exceed/i.test(details || "")) return hangup(S.limit);
   hangup((CLOSED[code] || S.dropped) + (details ? " (" + details + ")" : ""));
 }
 function hangup(msg) {
@@ -151,7 +156,7 @@ $("call").onclick = async () => {
     const { sessionToken } = await post("/bridge/session", { shape: innerWidth > innerHeight ? "landscape" : "portrait" });
     client = createClient(sessionToken);
     client.addListener("CONNECTION_CLOSED", closed);
-    client.addListener("SERVER_WARNING", (m) => { report("warning", "", m); say(m); });
+    client.addListener("SERVER_WARNING", (m) => { report("warning", "", m); say(/usage|limit|quota|credit|exceed/i.test(m || "") ? S.limit : m); });
     client.addListener("MIC_PERMISSION_DENIED", () => hangup(S.mic));
     client.addListener("VIDEO_PLAY_STARTED", () => say(""));
     $("live").style.display = "block";

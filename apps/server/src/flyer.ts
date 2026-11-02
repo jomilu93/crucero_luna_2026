@@ -44,6 +44,8 @@ export type FlyerBrief = z.infer<typeof FlyerBrief>;
 export interface ImageGenerator {
   /** Returns image bytes (PNG/JPEG); a portrait flyer background unless a size is given. */
   generate(prompt: string, size?: { width: number; height: number }): Promise<Uint8Array>;
+  /** Edits a photo by instruction, keeping the person recognisable (e.g. "dress him as a ship's captain"). */
+  edit?(prompt: string, imageUrl: string): Promise<Uint8Array>;
 }
 
 /** fal.ai Flux (synchronous endpoint). FAL_MODEL defaults to fal-ai/flux/dev. */
@@ -63,6 +65,20 @@ export class FalImageGenerator implements ImageGenerator {
       headers: { Authorization: `Key ${this.key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ prompt, image_size: size, num_images: 1, enable_safety_checker: true }),
     });
+    return this.download(res);
+  }
+
+  /** FLUX Kontext: an instruction-based edit of an existing photo (fal-ai/flux-pro/kontext). */
+  async edit(prompt: string, imageUrl: string): Promise<Uint8Array> {
+    const res = await this.fetchFn("https://fal.run/fal-ai/flux-pro/kontext", {
+      method: "POST",
+      headers: { Authorization: `Key ${this.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, image_url: imageUrl, num_images: 1, output_format: "jpeg", enable_safety_checker: true }),
+    });
+    return this.download(res);
+  }
+
+  private async download(res: Response): Promise<Uint8Array> {
     if (!res.ok) throw new Error(`fal ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const json = (await res.json()) as { images?: { url?: string }[] };
     const url = json.images?.[0]?.url;

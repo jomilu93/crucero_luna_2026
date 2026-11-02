@@ -63,6 +63,8 @@ export interface VoiceStatus {
   avatarId?: string;
   voiceId: string;
   portraits: string[];
+  /** The image model can edit a photo ("Vestir de capitán"). */
+  canEdit?: boolean;
   portraitUrl?: string;
   canPaint: boolean;
   /** Everything needed for a call is in place. */
@@ -82,6 +84,10 @@ export interface TvCall {
 export const DEFAULT_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
 const TTS_MODEL = "eleven_flash_v2_5";
 const SESSION_TTL_MS = 2 * 3600 * 1000;
+/** Kontext keeps the face and changes the clothes and setting; the avatar needs a clear, front-facing face. */
+const CAPTAINIFY_PROMPT =
+  "Dress this person as a cruise ship captain: crisp white captain's uniform with gold epaulettes and a white captain's hat with a golden moon emblem. Keep his face, age, expression and features exactly the same. Head and shoulders, facing the camera, soft natural light, the background a blurred ship's bridge overlooking a sunny bay.";
+
 const PORTRAIT_PROMPT =
   "Photorealistic head-and-shoulders portrait of a cheerful, charismatic Greek cruise ship captain in his late fifties, Mediterranean features, warm smile, thick silver beard and bushy eyebrows, crisp white captain's uniform with gold epaulettes and a white captain's hat with a golden moon emblem, looking straight at the camera, face centered and fully visible, soft natural light, blurred background of a sunny Acapulco bay seen from a ship's bridge, shallow depth of field, 85mm photo";
 
@@ -213,6 +219,7 @@ export class VoiceService {
       portraits: (await store.getSetting<string[]>("captain_portraits")) ?? [],
       portraitUrl: await store.getSetting<string>("captain_portrait"),
       canPaint: !!this.deps.images && !!this.deps.media,
+      canEdit: !!this.deps.images?.edit && !!this.deps.media,
       ready: !!cfg.elevenLabsKey && !!cfg.anamKey && !!agentId && !!avatarId,
     };
   }
@@ -224,9 +231,35 @@ export class VoiceService {
     const bytes = await images.generate(PORTRAIT_PROMPT, { width: 1024, height: 1024 });
     const ext = bytes[0] === 0xff && bytes[1] === 0xd8 ? "jpg" : "png";
     const url = await media.put(`captain/portrait-${Date.now()}.${ext}`, bytes, ext === "jpg" ? "image/jpeg" : "image/png");
-    const portraits = [url, ...((await store.getSetting<string[]>("captain_portraits")) ?? [])].slice(0, 6);
-    await store.setSetting("captain_portraits", portraits);
+    await this.addPortrait(url);
     return url;
+  }
+
+  /** A photo an admin uploaded (e.g. the real grandpa) becomes a candidate portrait, first in the list. */
+  async uploadPortrait(bytes: Uint8Array): Promise<string> {
+    const { media, store } = this.deps;
+    if (!media) throw new Error("no media storage configured");
+    const type = bytes[0] === 0xff && bytes[1] === 0xd8 ? "jpg" : bytes[0] === 0x89 && bytes[1] === 0x50 ? "png" : String.fromCharCode(...bytes.slice(8, 12)) === "WEBP" ? "webp" : undefined;
+    if (!type) throw new Error("upload a JPEG, PNG or WebP photo");
+    const url = await media.put(`captain/photo-${Date.now()}.${type}`, bytes, type === "jpg" ? "image/jpeg" : `image/${type}`);
+    await this.addPortrait(url);
+    return url;
+  }
+
+  /** Puts the person in a portrait into the Capitán's uniform, keeping their face (FLUX Kontext). */
+  async captainify(imageUrl: string): Promise<string> {
+    const { images, media } = this.deps;
+    if (!images?.edit || !media) throw new Error("set FAL_KEY to dress him as the Capitán");
+    const bytes = await images.edit(CAPTAINIFY_PROMPT, imageUrl);
+    const ext = bytes[0] === 0xff && bytes[1] === 0xd8 ? "jpg" : "png";
+    const url = await media.put(`captain/uniform-${Date.now()}.${ext}`, bytes, ext === "jpg" ? "image/jpeg" : "image/png");
+    await this.addPortrait(url);
+    return url;
+  }
+
+  private async addPortrait(url: string): Promise<void> {
+    const portraits = [url, ...((await this.deps.store.getSetting<string[]>("captain_portraits")) ?? []).filter((u) => u !== url)].slice(0, 9);
+    await this.deps.store.setSetting("captain_portraits", portraits);
   }
 
   /** Turns a portrait into the Capitán's live Anam avatar. */
@@ -339,7 +372,12 @@ export class VoiceService {
     const st = await this.status();
     if (!st.ready) throw new Error("the Capitán's video call is not set up yet (Admin tab → Capitán en vivo)");
     if (!person.admin && (await isPaused(this.deps.store))) throw new Error("the ship is paused");
-    const signed = (await this.eleven(`/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(st.agentId!)}`)) as { signed_url?: string };
+    let signed: { signed_url?: string };
+    try {
+      signed = (await this.eleven(`/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(st.agentId!)}`)) as { signed_url?: string };
+    } catch (err) {
+      throw this.callError("ElevenLabs", err instanceof Error ? err.message : String(err), person);
+    }
     if (!signed.signed_url) throw new Error("ElevenLabs returned no signed URL");
     const session = this.sessionFor(person);
     const res = await this.fetchFn("https://api.anam.ai/v1/auth/session-token", {
@@ -371,11 +409,27 @@ export class VoiceService {
       }),
     });
     const body = await res.text();
-    if (!res.ok) throw new Error(`Anam session ${res.status}: ${body.slice(0, 200)}`);
+    if (!res.ok) throw this.callError("Anam", `Anam session ${res.status}: ${body.slice(0, 200)}`, person, res.status);
     const sessionToken = (JSON.parse(body) as { sessionToken?: string }).sessionToken;
     if (!sessionToken) throw new Error("Anam returned no session token");
     this.note(`call started for ${person.name}`);
     return { sessionToken };
+  }
+
+  /**
+   * Why a call couldn't start, in words a passenger understands. A spent plan (Anam's video minutes or ElevenLabs'
+   * credits) is named, so the admin knows which account to top up; the vendor's own text goes to the call log.
+   */
+  private callError(vendor: "Anam" | "ElevenLabs", detail: string, person: Person, status?: number): Error {
+    const limit = status === 402 || status === 429 || /usage|limit|quota|credit|exceed|minutes|plan/i.test(detail);
+    this.note(`call refused by ${vendor}${limit ? " (usage limit)" : ""}: ${detail.slice(0, 220)}`);
+    if (!limit) return new Error(detail);
+    const what = vendor === "Anam" ? (person.language === "en" ? "video minutes (Anam)" : "minutos de video (Anam)") : person.language === "en" ? "voice credits (ElevenLabs)" : "créditos de voz (ElevenLabs)";
+    return new Error(
+      person.language === "en"
+        ? `The Capitán is off the Bridge for now: the ship ran out of ${what}. An admin can top up the plan; the chat still works.`
+        : `El Capitán salió del Puente un rato: el barco se quedó sin ${what}. Un admin puede recargar el plan; el chat sigue funcionando.`,
+    );
   }
 
   /** A phone asks the TV to take the call: the TV picks it up from pollTvCall and listens to the phone's mic. */
@@ -434,6 +488,15 @@ export class VoiceService {
         const events: string[] = agent?.conversation_config?.conversation?.client_events ?? [];
         const maxCall = agent?.conversation_config?.conversation?.max_duration_seconds;
         out.push(`agent turns: check-in after ${turn.turn_timeout ?? "?"} s · hang up after ${turn.silence_end_call_timeout ?? "?"} s silent · longest call ${maxCall ? `${Math.round(maxCall / 60)} min` : "10 min (default)"}${maxCall && maxCall >= MAX_CALL_SECONDS ? " ✓" : " ✗ (click Volver a configurar)"} · eagerness ${turn.turn_eagerness ?? "?"} · interruptions ${events.length ? (events.includes("interruption") ? "✓" : "✗ (turn on the interruption client event)") : "default"}`);
+        const sub = (await this.eleven("/v1/user/subscription").catch(() => undefined)) as
+          | { tier?: string; character_count?: number; character_limit?: number; next_character_count_reset_unix?: number }
+          | undefined;
+        if (sub?.character_limit) {
+          const left = sub.character_limit - (sub.character_count ?? 0);
+          const reset = sub.next_character_count_reset_unix ? new Date(sub.next_character_count_reset_unix * 1000).toISOString().slice(0, 10) : "?";
+          out.push(`elevenlabs plan: ${sub.tier ?? "?"} · ${sub.character_count ?? 0}/${sub.character_limit} credits used${left <= 0 ? " ✗ SPENT" : left < sub.character_limit * 0.1 ? " ⚠ almost spent" : " ✓"} · resets ${reset}`);
+        }
+        out.push(`anam plan: video minutes are on lab.anam.ai → Billing (no usage API); a spent plan shows as "call refused by Anam (usage limit)" below`);
         out.push(`agent voice: ${agent?.conversation_config?.tts?.voice_id ?? "?"} · tts ${agent?.conversation_config?.tts?.model_id ?? "?"} · language ${agent?.conversation_config?.agent?.language ?? "?"}`);
         const list = (await this.eleven(`/v1/convai/conversations?agent_id=${encodeURIComponent(st.agentId)}&page_size=3`)) as any;
         for (const c of (list?.conversations ?? []).slice(0, 3)) {

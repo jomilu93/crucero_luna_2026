@@ -25,7 +25,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (167 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (171 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -118,6 +118,13 @@ the home page (cookie `cl_lang`) and, in the cabin, the passenger's own language
   15 min after the end (`attendance_ask`). Balances derive from `attendance` (migration 006). No store or wallet:
   prizes are exchanged in person (the Admin tab shows balances). Eval: 59 cases (3 conchitas).
 - *WhatsApp:* see Channels above; the cabin offers "Conectar WhatsApp" (`wa.me` with a `link_<code>`), `WHATSAPP_NUMBER`.
+
+**Grandpa's face + call limits (2026-11-02):** Admin → Retratos: "Subir foto" (raw upload → `uploadPortrait`), and
+"Vestir de capitán" on any portrait (`captainify`: FLUX Kontext `fal-ai/flux-pro/kontext`, keeps the face, adds the
+uniform); "Usar este" makes it the Anam avatar. A tester hit "usage limit reached": `startCall` now names the spent
+plan (Anam video minutes or ElevenLabs credits) in the caller's language and logs the vendor's words; the call pages
+explain a mid-call limit; Diagnosticar shows ElevenLabs credits (`/v1/user/subscription`). Anam has no usage API:
+its minutes are on lab.anam.ai → Billing.
 
 ## Next steps, in order
 0. **Owner:** new WhatsApp number → README "WhatsApp with a new number" (Meta app, payment method, system-user token,

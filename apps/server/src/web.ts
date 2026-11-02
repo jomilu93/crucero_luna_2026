@@ -164,7 +164,9 @@ const T = {
     painting: "El Capitán posa para el retrato… (~20 s)", useThis: "Usar este", agent: "Agente de voz (ElevenLabs)",
     agentBtn: "Configurar agente de voz", agentRedo: "Volver a configurar", voiceId: "ID de voz", voiceHelp: "Elige una voz en español en la biblioteca de ElevenLabs y pega su ID.",
     diagnose: "Diagnóstico de llamadas", diagnoseHelp: "Revisa la configuración real del agente en ElevenLabs y por qué terminaron las últimas llamadas.", diagnoseBtn: "Diagnosticar",
-    testCall: "Probar llamada", portraits: "Retratos del Capitán", avatarHelp: "Pinta retratos y elige uno: se convierte en su avatar en vivo.",
+    testCall: "Probar llamada", portraits: "Retratos del Capitán", avatarHelp: "Pinta retratos o sube una foto real y elige uno: se convierte en su avatar en vivo.",
+    uploadPhoto: "Subir foto", dress: "Vestir de capitán",
+    uploadHelp: "Una foto de frente, cara bien iluminada y sin lentes oscuros. «Vestir de capitán» le pone el uniforme y conserva su cara; luego toca «Usar este».",
     edit: "Editar detalles", saveChanges: "Guardar cambios",
     chest: "Tu cofre", conchitas: "conchitas", toDo: "por confirmar", whoCame: "¿Quién vino?", whoCameSub: "Marca a quien vino: cada uno gana 10 conchitas.",
     addSomeone: "Agregar a alguien más", saveAttendance: "Guardar asistencia", didItHappen: "¿Se hizo?", confirmBtn: "✓ Sí, se hizo", confirmed: "✓ Confirmaste que se hizo",
@@ -203,7 +205,9 @@ const T = {
     painting: "The Capitán is posing for his portrait… (~20 s)", useThis: "Use this one", agent: "Voice agent (ElevenLabs)",
     agentBtn: "Set up the voice agent", agentRedo: "Set it up again", voiceId: "Voice ID", voiceHelp: "Pick a Spanish voice in the ElevenLabs voice library and paste its ID.",
     diagnose: "Call diagnostics", diagnoseHelp: "Checks the agent's real configuration on ElevenLabs and why the last calls ended.", diagnoseBtn: "Diagnose",
-    testCall: "Test call", portraits: "The Capitán's portraits", avatarHelp: "Paint portraits and pick one: it becomes his live avatar.",
+    testCall: "Test call", portraits: "The Capitán's portraits", avatarHelp: "Paint portraits or upload a real photo and pick one: it becomes his live avatar.",
+    uploadPhoto: "Upload a photo", dress: "Dress as captain",
+    uploadHelp: "A front-facing photo, face well lit, no sunglasses. \"Dress as captain\" adds the uniform and keeps his face; then tap \"Use this one\".",
     edit: "Edit details", saveChanges: "Save changes",
     chest: "Your treasure chest", conchitas: "sand dollars", toDo: "to confirm", whoCame: "Who came?", whoCameSub: "Tick who came: each one earns 10 sand dollars.",
     addSomeone: "Add someone else", saveAttendance: "Save attendance", didItHappen: "Did it happen?", confirmBtn: "✓ Yes, it happened", confirmed: "✓ You confirmed it happened",
@@ -367,7 +371,8 @@ details.card summary .ic.go{margin-left:auto;transition:transform .2s}details[op
 .callcard img,.callcard .ph{width:56px;height:56px;border-radius:50%;object-fit:cover;border:3px solid var(--gold);display:grid;place-items:center;font-size:30px;background:#0f2d5c;flex:none}
 .callcard .grow{flex:1}.callcard .m{color:rgba(255,255,255,.85)}.callcard .ic.go{color:#fff}
 .portraits{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.portraits form{position:relative;margin:0}.portraits img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:14px;display:block}
-.portraits button{position:absolute;left:6px;right:6px;bottom:6px;padding:6px;font-size:12px;border-radius:10px}.portraits .use img{outline:3px solid var(--gold);outline-offset:2px}
+.portraits button{position:absolute;left:6px;right:6px;bottom:6px;padding:6px;font-size:12px;border-radius:10px}
+.portraits .pt{display:flex;flex-direction:column;gap:6px}.portraits button.dress{position:static;width:100%}.portraits .use img{outline:3px solid var(--gold);outline-offset:2px}
 .ok{color:var(--ok);font-weight:700}.diag{white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:12px;padding:10px;margin:10px 0 0}.no{color:var(--warn);font-weight:700}
 .empty{text-align:center;padding:28px 18px;color:var(--muted)}.empty .e{font-size:40px}
 .btn.small{padding:9px 12px;font-size:14px;border-radius:12px;flex:none}
@@ -518,6 +523,22 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
 
   // ----- writes -----
   if (req.method === "POST") {
+    // A photo for the Capitán's face arrives as the raw file (fetch(file) from the Admin tab), not as a form.
+    if (sub === "/admin/voice/upload" && admin && deps.voice) {
+      try {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const c of req) {
+          size += (c as Buffer).length;
+          if (size > 12 * 1024 * 1024) throw new Error("photo too large (max 12 MB)");
+          chunks.push(c as Buffer);
+        }
+        json(res, 200, { url: await deps.voice.uploadPortrait(new Uint8Array(Buffer.concat(chunks))) });
+      } catch (err) {
+        json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return true;
+    }
     const f = await readForm(req);
     const att = sub.match(/^\/a\/([A-Za-z0-9-]+)\/(attendance|confirm)$/);
     if (att) {
@@ -637,12 +658,13 @@ export async function handleWeb(deps: WebDeps, req: IncomingMessage, res: Server
       }
       return true;
     }
-    const vadm = sub.match(/^\/admin\/voice\/(paint|avatar|agent|voiceid|diagnose)$/);
+    const vadm = sub.match(/^\/admin\/voice\/(paint|avatar|captainify|agent|voiceid|diagnose)$/);
     if (vadm && admin && deps.voice) {
       let out: string = s.saved;
       try {
         if (vadm[1] === "paint") await deps.voice.paintPortrait();
         else if (vadm[1] === "avatar") await deps.voice.useAvatar(f.get("url") ?? "");
+        else if (vadm[1] === "captainify") await deps.voice.captainify(f.get("url") ?? "");
         else if (vadm[1] === "agent") await deps.voice.setupAgent();
         else if (vadm[1] === "diagnose") {
           await deps.store.setSetting("voice_diagnosis", { at: now.toISOString(), lines: await deps.voice.diagnose() });
@@ -934,7 +956,14 @@ ${canManage && live ? `<form class="card pad" method="post" action="/c/${esc(tok
       const mark = (ok: boolean, label: string) => `<div><span class="${ok ? "ok" : "no"}">${ok ? "✓" : "✗"}</span> ${label}</div>`;
       const portraits = v.portraits.length
         ? `<div class="portraits">${v.portraits
-            .map((u) => `<form method="post" action="${a}/avatar" class="${u === v.portraitUrl ? "use" : ""}"><input type="hidden" name="url" value="${esc(u)}"><img src="${esc(u)}" alt=""><button class="small"${v.anam ? "" : " disabled"}>${u === v.portraitUrl ? "✓" : s.useThis}</button></form>`)
+            .map(
+              (u) =>
+                `<div class="pt"><form method="post" action="${a}/avatar" class="${u === v.portraitUrl ? "use" : ""}"><input type="hidden" name="url" value="${esc(u)}"><img src="${esc(u)}" alt=""><button class="small"${v.anam ? "" : " disabled"}>${u === v.portraitUrl ? "✓" : s.useThis}</button></form>${
+                  v.canEdit
+                    ? `<form method="post" action="${a}/captainify" onsubmit="this.querySelector('button').textContent='…'"><input type="hidden" name="url" value="${esc(u)}"><button class="small ghost dress">🧑‍✈️ ${s.dress}</button></form>`
+                    : ""
+                }</div>`,
+            )
             .join("")}</div>`
         : "";
       return `<h2 class="sec">📞 ${s.live}</h2><div class="card pad">
@@ -942,7 +971,10 @@ ${canManage && live ? `<form class="card pad" method="post" action="/c/${esc(tok
 <div class="m">${mark(v.elevenLabs, "ELEVENLABS_API_KEY")}${mark(v.anam, "ANAM_API_KEY")}${mark(!!v.avatarId, "Avatar")}${mark(!!v.agentId, s.agent)}</div></div></div>
 ${v.ready ? `<div class="actions"><a class="btn" href="/c/${esc(token)}/bridge">📞 ${s.testCall}</a></div>` : ""}</div>
 <div class="card pad"><div class="t" style="font-size:16px">${s.portraits}</div><div class="m">${s.avatarHelp}</div>${portraits}
-<form method="post" action="${a}/paint" class="actions" onsubmit="this.querySelector('button').textContent='${s.painting}'"><button class="alt"${v.canPaint ? "" : " disabled"}>🎨 ${s.paint}</button></form></div>
+<div class="actions"><form method="post" action="${a}/paint" onsubmit="this.querySelector('button').textContent='${s.painting}'"><button class="alt"${v.canPaint ? "" : " disabled"}>🎨 ${s.paint}</button></form>
+<label class="btn alt" style="margin:0;text-transform:none;letter-spacing:0;font-size:16px;color:var(--blue)">📷 ${s.uploadPhoto}<input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="upPhoto(this)"></label></div>
+<div class="m" style="margin-top:6px">${s.uploadHelp}</div>
+<script>async function upPhoto(i){const f=i.files[0];if(!f)return;i.parentElement.firstChild.textContent="⏳ ";const r=await fetch("${a}/upload",{method:"POST",headers:{"Content-Type":f.type||"application/octet-stream"},body:f});const j=await r.json().catch(()=>({}));location.href="/c/${esc(token)}/admin?ok="+encodeURIComponent(r.ok?"${s.saved}":"ERROR: "+(j.error||r.status))}</script></div>
 <div class="card pad"><div class="t" style="font-size:16px">${s.agent}</div>${v.agentId ? `<div class="m">agent ${esc(v.agentId)}</div>` : ""}
 <form method="post" action="${a}/agent" class="actions"><button class="alt"${v.elevenLabs ? "" : " disabled"}>${v.agentId ? s.agentRedo : s.agentBtn}</button></form>
 <form method="post" action="${a}/voiceid"><label>${s.voiceId}</label><div class="actions" style="margin-top:0"><input name="voice_id" value="${esc(v.voiceId)}" style="flex:1"><button class="small alt">${s.save}</button></div>
