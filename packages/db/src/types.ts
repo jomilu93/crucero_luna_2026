@@ -85,9 +85,20 @@ export interface Conversation {
   updatedAt: string;
 }
 
+/**
+ * Conchitas 🐚: one passenger at one activity. The host confirms the guest came; the guest confirms the activity
+ * happened (which is how the host earns theirs). Either side can come first.
+ */
+export interface Attendance {
+  activityId: string;
+  personId: string;
+  hostConfirmedAt?: string;
+  guestConfirmedAt?: string;
+}
+
 /** Idempotency record for scheduled sends: one row per (kind, key), e.g. ("morning", "sofia:2026-12-28"). */
 export interface Delivery {
-  kind: "morning" | "morning_full" | "reminder" | "sponsor_nudge" | "announcement";
+  kind: "morning" | "morning_full" | "reminder" | "sponsor_nudge" | "announcement" | "attendance_ask";
   key: string;
   sentAt: string;
   /** Optional data for a follow-up step, e.g. the full morning message waiting behind the template knock. */

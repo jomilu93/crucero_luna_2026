@@ -56,6 +56,9 @@
     { "id": "voice-multi-step", "as": "sofia", "at": "2026-12-27T15:00:00Z", "channel": "voice", "before": ["hola capitán", "¿quién va al bingo de hoy?"], "say": "apúntame a mí también y avísale a Ricardo que voy", "expect_tools": [{ "name": "signup", "args": { "activity_id": "a04" } }, { "name": "send_message" }], "reply_speakable": true, "reply_max_chars": 420 },
     { "id": "voice-sponsor", "as": "ricardo", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "quiero organizar un karaoke el treinta a las nueve de la noche en el gran salón", "expect_tools": [{ "name": "create_activity" }], "reply_speakable": true, "reply_max_chars": 420 },
     { "id": "voice-message", "as": "diego", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "tell Ricardo I'm bringing the bingo coins", "expect_tools": [{ "name": "send_message" }], "reply_lang": "en", "reply_speakable": true, "reply_max_chars": 300 },
-    { "id": "voice-remember", "as": "ricardo", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "por cierto, soy alérgico al camarón", "expect_tools": [{ "name": "remember" }], "reply_speakable": true, "reply_max_chars": 300 }
+    { "id": "voice-remember", "as": "ricardo", "at": "2026-12-27T15:00:00Z", "channel": "voice", "say": "por cierto, soy alérgico al camarón", "expect_tools": [{ "name": "remember" }], "reply_speakable": true, "reply_max_chars": 300 },
+    { "id": "conchitas-guest-confirms", "as": "valeria", "at": "2026-12-27T15:00:00Z", "say": "sí se hizo el yoga, estuvo increíble", "expect_tools": [{ "name": "confirm_event", "args": { "activity_id": "a03" } }], "forbid_tools": ["mark_attendance"], "reply_lang": "es" },
+    { "id": "conchitas-host-marks", "as": "sofia", "at": "2026-12-27T15:00:00Z", "say": "al yoga de hoy vinieron Diego y Valeria", "expect_tools": [{ "name": "mark_attendance", "args": { "activity_id": "a03" } }], "forbid_tools": ["confirm_event"], "reply_lang": "es" },
+    { "id": "conchitas-balance", "as": "diego", "at": "2026-12-27T15:00:00Z", "say": "how many sand dollars do I have?", "expect_tools": [{ "name": "my_conchitas" }], "reply_lang": "en" }
   ]
 }

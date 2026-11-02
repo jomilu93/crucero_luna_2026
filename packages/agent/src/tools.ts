@@ -13,6 +13,7 @@ import {
   shipTime,
 } from "@crucero/db";
 import { z } from "zod";
+import { CONCHITAS, chestFor, vouchedFor } from "./conchitas.js";
 import { describeActivity } from "./context.js";
 
 /** Where outbound messages go: WhatsApp adapter, web push, or the CLI console. */
@@ -61,9 +62,9 @@ async function resolvePerson(ctx: ToolContext, name: string | undefined): Promis
   return p;
 }
 
-/** Who may change or cancel an activity: its host, or the host's guardian (a parent managing a kid's activity). */
-function canManage(person: Person, activity: Activity, host: Person | undefined): boolean {
-  return activity.sponsorId === person.id || (!!host?.guardianId && host.guardianId === person.id);
+/** The host, the host's guardian, or an admin (who fixes anyone's mistakes). */
+export function canManage(person: Person, activity: Activity, host: Person | undefined): boolean {
+  return activity.sponsorId === person.id || (!!host?.guardianId && host.guardianId === person.id) || person.admin === true;
 }
 
 async function notAllowed(ctx: ToolContext, a: Activity, what: string): Promise<string> {
@@ -204,10 +205,11 @@ export function buildTools(ctx: ToolContext) {
 
   const update_activity = betaZodTool({
     name: "update_activity",
-    description: "Change details of an existing activity (time, place, capacity, what to bring, title). Only the host (or the host's guardian) can; for anyone else it returns NOT ALLOWED and changes nothing.",
+    description: "Change details of an existing activity (time, place, capacity, what to bring, title, emoji). Only the host (or the host's guardian, or an admin) can; for anyone else it returns NOT ALLOWED and changes nothing.",
     inputSchema: z.object({
       activity_id: z.string(),
       title: z.string().min(3).max(80).optional(),
+      emoji: z.string().min(1).max(8).optional(),
       date: DATE.optional(),
       start_time: TIME.optional(),
       end_time: TIME.optional(),
@@ -223,6 +225,7 @@ export function buildTools(ctx: ToolContext) {
       const date = i.date ?? shipDate(a.startsAt);
       const patch: Partial<Activity> = {};
       if (i.title) patch.title = i.title;
+      if (i.emoji) patch.emoji = i.emoji;
       if (i.location) patch.location = i.location;
       if (i.description) patch.description = i.description;
       if (i.capacity) patch.capacity = i.capacity;
@@ -243,7 +246,7 @@ export function buildTools(ctx: ToolContext) {
 
   const cancel_activity = betaZodTool({
     name: "cancel_activity",
-    description: "Cancel an activity. Requires a reason. Only the host (or the host's guardian) can; for anyone else it returns NOT ALLOWED. Does not notify anyone by itself; follow with send_message if people had signed up.",
+    description: "Cancel an activity. Requires a reason. Only the host (or the host's guardian, or an admin) can; for anyone else it returns NOT ALLOWED. Does not notify anyone by itself; follow with send_message if people had signed up.",
     inputSchema: z.object({ activity_id: z.string(), reason: z.string().min(2).max(200) }),
     run: wrap("cancel_activity", async ({ activity_id, reason }) => {
       const a = await store.getActivity(activity_id);
@@ -400,6 +403,69 @@ export function buildTools(ctx: ToolContext) {
     }),
   });
 
+  // ----- conchitas 🐚 -----
+  const startedOrNot = (a: Activity) => (a.startsAt > ctx.now.toISOString() ? `"${a.title}" hasn't started yet; conchitas are confirmed once it happens.` : undefined);
+
+  const mark_attendance = betaZodTool({
+    name: "mark_attendance",
+    description: `The host says who came to their activity (after it started): each guest marked as there earns ${CONCHITAS.guest} conchitas. attended=false takes someone off. Only the host (or the host's guardian, or an admin) can.`,
+    inputSchema: z.object({ activity_id: z.string(), people: z.array(z.string()).min(1).max(30), attended: z.boolean().optional() }),
+    run: wrap("mark_attendance", async ({ activity_id, people, attended }) => {
+      const a = await store.getActivity(activity_id);
+      if (!a || a.status === "cancelled") throw new Error(`No live activity ${activity_id}`);
+      if (!canManage(passenger, a, await store.getPerson(a.sponsorId))) return notAllowed(ctx, a, "say who came to");
+      const early = startedOrNot(a);
+      if (early) return `NOT YET: ${early}`;
+      const done: string[] = [];
+      for (const name of people) {
+        const p = (await store.getPerson(name)) ?? (await resolvePerson(ctx, name)); // a passenger id (web) or a name (chat)
+        if (p.id === a.sponsorId) continue; // the host earns by being vouched for, not by marking themselves
+        await store.setAttendance(a.id, p.id, { host: attended !== false });
+        done.push(p.name);
+      }
+      const rows = await store.listAttendance(a.id);
+      const marked = new Set(rows.filter((r) => r.hostConfirmedAt).map((r) => r.personId));
+      const unmarked = (await store.listSignups(a.id)).filter((s) => s.status !== "out" && s.personId !== a.sponsorId && !marked.has(s.personId));
+      const names = async (ids: string[]) => (await Promise.all(ids.map(async (id) => (await store.getPerson(id))?.name ?? id))).join(", ");
+      return `${attended === false ? "Unmarked" : `Marked as there (+${CONCHITAS.guest} conchitas each)`}: ${done.join(", ") || "nobody"} at "${a.title}" [${a.id}]. Signed up but not marked: ${(await names(unmarked.map((s) => s.personId))) || "none"}. Host's ${CONCHITAS.host}: ${vouchedFor(a, rows) ? "earned (a guest confirmed)" : "waiting for a guest to confirm the activity happened"}.`;
+    }),
+  });
+
+  const confirm_event = betaZodTool({
+    name: "confirm_event",
+    description: `The current passenger confirms an activity they went to really happened (that the host organized it). That earns the host ${CONCHITAS.host} conchitas; the passenger's own ${CONCHITAS.guest} come when the host marks them as there.`,
+    inputSchema: z.object({ activity_id: z.string() }),
+    run: wrap("confirm_event", async ({ activity_id }) => {
+      const a = await store.getActivity(activity_id);
+      if (!a || a.status === "cancelled") throw new Error(`No live activity ${activity_id}`);
+      if (a.sponsorId === passenger.id) return `NOT ALLOWED: ${passenger.name} hosts "${a.title}"; a guest has to confirm it. Ask who came instead (mark_attendance).`;
+      const early = startedOrNot(a);
+      if (early) return `NOT YET: ${early}`;
+      const row = await store.setAttendance(a.id, passenger.id, { guest: true });
+      const host = await store.getPerson(a.sponsorId);
+      return `Confirmed "${a.title}" [${a.id}] happened: ${host?.name ?? "the host"} gets ${CONCHITAS.host} conchitas. ${passenger.name}'s ${CONCHITAS.guest}: ${row.hostConfirmedAt ? "earned (the host marked them as there)" : "count once the host marks them as there"}.`;
+    }),
+  });
+
+  const my_conchitas = betaZodTool({
+    name: "my_conchitas",
+    description: "The current passenger's conchitas 🐚: balance, what earned them, what is still waiting for a confirmation, and what they still need to confirm or mark. Prizes are exchanged in person at the cruise store.",
+    inputSchema: z.object({}),
+    run: wrap("my_conchitas", async () => {
+      const c = await chestFor(store, passenger, ctx.now);
+      const line = (l: (typeof c.lines)[number]) =>
+        `- ${l.role === "host" ? "hosted" : "went to"} [${l.activity.id}] ${l.activity.title}: ${l.amount} ${l.earned ? "earned" : l.role === "host" ? "(waiting for a guest to confirm)" : "(waiting for the host to mark them)"}`;
+      return [
+        `${passenger.name}: ${c.balance} conchitas.`,
+        ...c.lines.slice(0, 12).map(line),
+        c.toConfirm.length ? `Still to confirm they happened (confirm_event): ${c.toConfirm.map((a) => `[${a.id}] ${a.title}`).join("; ")}` : "",
+        c.toMark.length ? `Still to say who came (mark_attendance): ${c.toMark.map((a) => `[${a.id}] ${a.title}`).join("; ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }),
+  });
+
   const my_cabin_link = betaZodTool({
     name: "my_cabin_link",
     description: "The current passenger's private web page link (their 'camarote'): the full program by day, one-tap sign-ups, a sponsor form with flyers, their settings and a calendar link. Share it when they ask for the web, the app, the program as a page, or a link; it is personal, so never send one passenger's link to another.",
@@ -522,6 +588,9 @@ export function buildTools(ctx: ToolContext) {
     set_preferences,
     my_cabin_link,
     get_weather,
+    mark_attendance,
+    confirm_event,
+    my_conchitas,
     ...admin,
   ];
 }

@@ -17,6 +17,7 @@ import { FalImageGenerator, FlyerService } from "./flyer.js";
 import { DiskMediaStore, type MediaStore, SupabaseMediaStore } from "./media.js";
 import { MetaWhatsAppOutbox } from "./meta.js";
 import { cabinUrl, tvKey, verifyChatLink } from "./web.js";
+import { RoutingOutbox } from "./routing.js";
 import { TelegramOutbox, telegramWebhookSecret } from "./telegram.js";
 import { TwilioWhatsAppOutbox } from "./twilio.js";
 import { VoiceService } from "./voice.js";
@@ -36,18 +37,18 @@ if (env.DATABASE_URL) {
   log(`store: json file (${env.CRUCERO_DATA_FILE || ".data/crucero.json"}) — dev only`);
 }
 
-// Outbox: Telegram (while WhatsApp is parked), Meta Cloud API direct, Twilio, or the console.
-let outbox: TemplateOutbox;
-let channel: "telegram" | "meta" | "twilio" | "console";
+// Outbox: WhatsApp (Meta Cloud API direct, or Twilio) and Telegram side by side, each passenger on the channel
+// they connected (RoutingOutbox); the console when neither is configured.
 let telegram: TelegramOutbox | undefined;
+let whatsapp: TemplateOutbox | undefined;
+const channels: ("telegram" | "meta" | "twilio")[] = [];
 if (env.TELEGRAM_BOT_TOKEN) {
   telegram = new TelegramOutbox({ botToken: env.TELEGRAM_BOT_TOKEN }, () => store.listPeople());
-  outbox = telegram;
-  channel = "telegram";
+  channels.push("telegram");
   log("outbox: telegram bot");
-} else if (env.META_ACCESS_TOKEN && env.META_PHONE_NUMBER_ID) {
-  channel = "meta";
-  outbox = new MetaWhatsAppOutbox(
+}
+if (env.META_ACCESS_TOKEN && env.META_PHONE_NUMBER_ID) {
+  whatsapp = new MetaWhatsAppOutbox(
     {
       accessToken: env.META_ACCESS_TOKEN,
       phoneNumberId: env.META_PHONE_NUMBER_ID,
@@ -58,13 +59,15 @@ if (env.TELEGRAM_BOT_TOKEN) {
         morning_knock: env.META_TEMPLATE_MORNING_KNOCK || undefined,
         activity_reminder: env.META_TEMPLATE_REMINDER || undefined,
         new_activity: env.META_TEMPLATE_NEW_ACTIVITY || undefined,
+        notice: env.META_TEMPLATE_NOTICE || undefined,
       },
     },
     () => store.listPeople(),
   );
-  log(`outbox: meta cloud api (phone number id ${env.META_PHONE_NUMBER_ID})`);
+  channels.push("meta");
+  log(`outbox: whatsapp via meta cloud api (phone number id ${env.META_PHONE_NUMBER_ID}${env.META_TEMPLATE_NOTICE ? `, notice template ${env.META_TEMPLATE_NOTICE}` : ", no notice template: messages after 24 h of silence will fail"})`);
 } else if (env.TWILIO_ACCOUNT_SID && env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRET && env.TWILIO_WHATSAPP_FROM) {
-  outbox = new TwilioWhatsAppOutbox(
+  whatsapp = new TwilioWhatsAppOutbox(
     {
       accountSid: env.TWILIO_ACCOUNT_SID,
       apiKeySid: env.TWILIO_API_KEY_SID,
@@ -79,15 +82,19 @@ if (env.TELEGRAM_BOT_TOKEN) {
     },
     () => store.listPeople(),
   );
-  log(`outbox: twilio whatsapp from ${env.TWILIO_WHATSAPP_FROM}`);
-  channel = "twilio";
-} else {
-  channel = "console";
-  outbox = {
-    send: async (to, text) => log(`[console outbox] → ${to === "everyone" ? "EVERYONE" : to.name}: ${text.replace(/\n/g, " ⏎ ").slice(0, 160)}`),
-  };
-  log("outbox: console (set TELEGRAM_BOT_TOKEN, META_* or TWILIO_* to send real messages)");
+  channels.push("twilio");
+  log(`outbox: whatsapp via twilio from ${env.TWILIO_WHATSAPP_FROM}`);
 }
+const channel = channels.length ? channels.join("+") : "console";
+const outbox: TemplateOutbox = channels.length
+  ? new RoutingOutbox({ telegram, whatsapp }, () => store.listPeople())
+  : {
+      send: async (to, text) => log(`[console outbox] → ${to === "everyone" ? "EVERYONE" : to.name}: ${text.replace(/\n/g, " ⏎ ").slice(0, 160)}`),
+    };
+if (!channels.length) log("outbox: console (set META_* (WhatsApp), TELEGRAM_BOT_TOKEN or TWILIO_* to send real messages)");
+/** The ship's WhatsApp number for wa.me links on the website (E.164), when WhatsApp is on. */
+const whatsappNumber = whatsapp ? env.WHATSAPP_NUMBER || undefined : undefined;
+if (whatsapp && !whatsappNumber) log("whatsapp: set WHATSAPP_NUMBER (e.g. +5215512345678) so the website can offer 'Conectar WhatsApp'");
 
 const publicUrl = env.PUBLIC_URL ?? `http://localhost:${env.PORT ?? 8080}`;
 const client = new Anthropic();
@@ -170,8 +177,8 @@ const server = createServer(
     metaPhoneNumberId: env.META_PHONE_NUMBER_ID,
     telegramSecret,
     answerTelegramCallback: telegram ? (id) => telegram.answerCallback(id) : undefined,
-    // Only the active channel's webhook is live, so a parked channel can never board passengers.
-    webhooks: channel === "console" ? undefined : [channel],
+    // Only configured channels' webhooks are live, so a parked channel can never board passengers.
+    webhooks: channels.length ? channels : undefined,
     privacyContact: env.PRIVACY_CONTACT || undefined,
     web: {
       store,
@@ -182,6 +189,7 @@ const server = createServer(
       voice,
       botUsername: () => botUsername,
       boardingCode: env.BOARDING_CODE || undefined,
+      whatsappNumber,
       adminPassword: env.ADMIN_PASSWORD || undefined,
     },
     tv: { store, key: tvKey(webSecret), voice, botUsername: () => botUsername, publicUrl },
@@ -227,13 +235,14 @@ async function runTick() {
         store,
         outbox,
         useTemplates,
+        pageLink: (p, path) => `${cabinLink(p)}${path}`,
         log,
         writeMorning: async (person, date, at) => writeMorningMessage(client, store, await buildMorningBrief(store, person, date, at)),
       },
       now,
     );
-    if (report.mornings.length || report.reminders.length || report.sponsorNudges.length || report.errors.length) {
-      log(`tick: mornings=${report.mornings.length} reminders=${report.reminders.length} nudges=${report.sponsorNudges.length} errors=${report.errors.length}`);
+    if (report.mornings.length || report.reminders.length || report.sponsorNudges.length || report.attendanceAsks.length || report.errors.length) {
+      log(`tick: mornings=${report.mornings.length} reminders=${report.reminders.length} nudges=${report.sponsorNudges.length} conchitas=${report.attendanceAsks.length} errors=${report.errors.length}`);
       for (const e of report.errors) log(`tick error: ${e}`);
     }
   } finally {

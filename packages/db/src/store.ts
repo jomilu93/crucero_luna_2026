@@ -1,5 +1,6 @@
 import type {
   Activity,
+  Attendance,
   Conversation,
   Delivery,
   MemoryEntry,
@@ -49,6 +50,12 @@ export interface Store {
   // Sign-ups
   listSignups(activityId: string): Promise<Signup[]>;
   listSignupsForPerson(personId: string): Promise<Signup[]>;
+
+  // Attendance (conchitas)
+  listAttendance(activityId: string): Promise<Attendance[]>;
+  listAttendanceForPerson(personId: string): Promise<Attendance[]>;
+  /** `host` / `guest`: true confirms (keeping the first time), false withdraws, undefined leaves it. */
+  setAttendance(activityId: string, personId: string, patch: { host?: boolean; guest?: boolean }): Promise<Attendance>;
   setSignup(activityId: string, personId: string, status: SignupStatus): Promise<Signup>;
   markReminded(activityId: string, personId: string, at: string): Promise<void>;
 

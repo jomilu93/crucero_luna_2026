@@ -1,3 +1,4 @@
+import { chestFor } from "./conchitas.js";
 import {
   type Activity,
   type Person,
@@ -56,6 +57,7 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
   const { from, to } = dayBounds(today);
   const todays = await store.listActivities({ from, to });
   const upcoming = (await store.listActivities({ from: to })).filter((a) => a.status === "published");
+  const chest = await chestFor(store, person, now);
   const mine = new Set((await store.listSignupsForPerson(person.id)).filter((s) => s.status !== "out").map((s) => s.activityId));
   const memory = await store.getMemory(person.id);
   const guardian = person.guardianId ? await store.getPerson(person.guardianId) : undefined;
@@ -75,6 +77,10 @@ export async function buildPassengerContext(store: Store, ctx: PassengerContext)
     "",
     upcoming.length ? `# Rest of the voyage (index only; use get_program for details)` : "",
     ...upcoming.map((a) => `${mine.has(a.id) || a.sponsorId === person.id ? "★ " : "  "}[${a.id}] ${shipDate(a.startsAt)} ${a.emoji} ${a.title}`),
+    "",
+    `# Conchitas 🐚: ${chest.balance}`,
+    ...chest.toConfirm.slice(-3).map((a) => `- to confirm it happened (ask: ¿se hizo?): [${a.id}] ${a.title}`),
+    ...chest.toMark.slice(-3).map((a) => `- hosted, to say who came (ask: ¿quién vino?): [${a.id}] ${a.title}`),
     "",
     memory.length ? `# What you remember about ${person.name.split(" ")[0]}` : "",
     ...memory.map((m) => `- ${m.key}: ${m.value}`),

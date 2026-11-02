@@ -1,6 +1,7 @@
 import type { ActivityQuery, Store } from "./store.js";
 import type {
   Activity,
+  Attendance,
   Conversation,
   Delivery,
   MemoryEntry,
@@ -85,6 +86,15 @@ function rowToSignup(r: Row): Signup {
     status: r.status as SignupStatus,
     createdAt: iso(r.created_at),
     remindedAt: isoOpt(r.reminded_at),
+  };
+}
+
+function rowToAttendance(r: Row): Attendance {
+  return {
+    activityId: String(r.activity_id),
+    personId: String(r.person_id),
+    hostConfirmedAt: isoOpt(r.host_confirmed_at),
+    guestConfirmedAt: isoOpt(r.guest_confirmed_at),
   };
 }
 
@@ -278,6 +288,26 @@ export class PgStore implements Store {
       [activityId, personId, status],
     );
     return rowToSignup(rows[0]);
+  }
+  async listAttendance(activityId: string): Promise<Attendance[]> {
+    return (await this.db.query<Row>("select * from attendance where activity_id = $1", [activityId])).map(rowToAttendance);
+  }
+  async listAttendanceForPerson(personId: string): Promise<Attendance[]> {
+    return (await this.db.query<Row>("select * from attendance where person_id::text = $1", [personId])).map(rowToAttendance);
+  }
+  async setAttendance(activityId: string, personId: string, patch: { host?: boolean; guest?: boolean }): Promise<Attendance> {
+    // true keeps the first confirmation time, false clears it, undefined leaves the column alone.
+    const col = (v: boolean | undefined, name: string) => (v === true ? `coalesce(attendance.${name}, now())` : v === false ? "null" : `attendance.${name}`);
+    const rows = await this.db.query<Row>(
+      `insert into attendance (activity_id, person_id, host_confirmed_at, guest_confirmed_at)
+       values ($1, $2, ${patch.host ? "now()" : "null"}, ${patch.guest ? "now()" : "null"})
+       on conflict (activity_id, person_id) do update set
+         host_confirmed_at = ${col(patch.host, "host_confirmed_at")},
+         guest_confirmed_at = ${col(patch.guest, "guest_confirmed_at")}
+       returning *`,
+      [activityId, personId],
+    );
+    return rowToAttendance(rows[0]);
   }
   async markReminded(activityId: string, personId: string, at: string): Promise<void> {
     await this.db.query("update signup set reminded_at = $3 where activity_id = $1 and person_id::text = $2", [activityId, personId, at]);

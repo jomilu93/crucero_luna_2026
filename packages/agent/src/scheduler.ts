@@ -1,3 +1,4 @@
+import { CONCHITAS } from "./conchitas.js";
 import { type Activity, type Person, type Store, inQuietHours, isPaused, prettyTime, shipDate, shipTime } from "@crucero/db";
 import { buildMorningBrief, type MorningMessage } from "./morning.js";
 import type { Outbox } from "./tools.js";
@@ -47,6 +48,8 @@ export interface SchedulerDeps {
   writeMorning: (person: Person, date: string, now: Date) => Promise<MorningMessage>;
   /** When true, the morning goes out as a template knock and the full show waits for a tap. */
   useTemplates: boolean;
+  /** A passenger's own web page for a path (e.g. "/a/a04"), linked from the post-activity conchitas question. */
+  pageLink?: (person: Person, path: string) => string;
   log?: (line: string) => void;
 }
 
@@ -54,6 +57,8 @@ export interface TickReport {
   mornings: string[];
   reminders: string[];
   sponsorNudges: string[];
+  /** Post-activity conchitas questions, "<activity>:<person>". */
+  attendanceAsks: string[];
   errors: string[];
 }
 
@@ -98,6 +103,20 @@ export function sponsorNudgeText(a: Activity, sponsor: Person, going: number): s
     : `🫡 Capitán to ${sponsor.name.split(" ")[0]}: your ${a.emoji} ${a.title} is in one hour (${time}, ${a.location}). ${going} passenger${going === 1 ? "" : "s"} ${going === 1 ? "is" : "are"} counting on you. All set?`;
 }
 
+/** After an activity: the host is asked who came, each guest whether it happened (conchitas 🐚). */
+export function attendanceAskText(a: Activity, to: Person, host: Person | undefined, asHost: boolean, link?: string): string {
+  const es = to.language === "es";
+  const what = `${a.emoji} ${a.title}`;
+  const text = asHost
+    ? es
+      ? `🐚 ¿Quién vino a ${what}? Respóndeme con los nombres (o márcalos en tu camarote) y cada uno gana ${CONCHITAS.guest} conchitas.`
+      : `🐚 Who came to ${what}? Reply with their names (or tick them in your cabin) and each one earns ${CONCHITAS.guest} sand dollars.`
+    : es
+      ? `🐚 ¿Se hizo ${what}? Respóndeme «sí» (o toca ✓ en tu camarote) y ${host?.name.split(" ")[0] ?? "el anfitrión"} gana ${CONCHITAS.host} conchitas.`
+      : `🐚 Did ${what} happen? Reply "yes" (or tap ✓ in your cabin) and ${host?.name.split(" ")[0] ?? "the host"} earns ${CONCHITAS.host} sand dollars.`;
+  return link ? `${text}\n${link}` : text;
+}
+
 /** Earliest ship-local time a person's morning may go out on a date. */
 export function morningWindowStart(person: Person, date: string): string {
   const soft = date.endsWith("-01-01");
@@ -110,7 +129,7 @@ export function morningWindowStart(person: Person, date: string): string {
  */
 export async function tick(deps: SchedulerDeps, now: Date): Promise<TickReport> {
   const { store, outbox, log = () => {} } = deps;
-  const report: TickReport = { mornings: [], reminders: [], sponsorNudges: [], errors: [] };
+  const report: TickReport = { mornings: [], reminders: [], sponsorNudges: [], attendanceAsks: [], errors: [] };
   if (await isPaused(store)) return report; // admin pause switch: nothing proactive goes out
   const today = shipDate(now);
   const nowHM = shipTime(now);
@@ -190,6 +209,39 @@ export async function tick(deps: SchedulerDeps, now: Date): Promise<TickReport> 
       report.sponsorNudges.push(a.id);
     } catch (err) {
       report.errors.push(`nudge ${a.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 4. Conchitas: from 15 minutes after an activity ends (up to 12 hours), ask the host who came and each guest
+  // whether it happened. Once per person per activity; quiet hours wait; people who already answered are skipped.
+  const after = now.getTime() - 15 * 60 * 1000;
+  const until = now.getTime() - 12 * 3600 * 1000;
+  const ended = (await store.listActivities({ from: new Date(until - 24 * 3600 * 1000).toISOString(), to: now.toISOString() })).filter(
+    (a) => Date.parse(a.endsAt) <= after && Date.parse(a.endsAt) > until,
+  );
+  for (const a of ended) {
+    const host = byId.get(a.sponsorId);
+    const rows = await store.listAttendance(a.id);
+    const guests = (await store.listSignups(a.id)).filter((s) => s.status !== "out" && s.personId !== a.sponsorId);
+    if (!guests.length) continue;
+    const asks: { person: Person; asHost: boolean }[] = [];
+    if (host && !rows.some((r) => r.hostConfirmedAt)) asks.push({ person: host, asHost: true });
+    for (const g of guests) {
+      const p = byId.get(g.personId);
+      if (p && !rows.some((r) => r.personId === p.id && r.guestConfirmedAt)) asks.push({ person: p, asHost: false });
+    }
+    for (const { person, asHost } of asks) {
+      const key = `${a.id}:${person.id}`;
+      if (!person.phoneE164 || person.muted || inQuietHours(now, person.quietHours)) continue;
+      if (outbox.canReach && !outbox.canReach(person)) continue;
+      if (await store.wasDelivered("attendance_ask", key)) continue;
+      try {
+        await outbox.send(person, attendanceAskText(a, person, host, asHost, deps.pageLink?.(person, `/a/${a.id}`)), { from: person });
+        await store.markDelivered("attendance_ask", key);
+        report.attendanceAsks.push(key);
+      } catch (err) {
+        report.errors.push(`attendance ${key}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 

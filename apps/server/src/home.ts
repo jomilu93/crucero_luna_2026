@@ -216,8 +216,17 @@ interface FormState {
   next?: string;
 }
 
+/** With WhatsApp on, the page says so instead of "WhatsApp soon". */
+const WITH_WHATSAPP: [string, string][] = [
+  ["Hoy en Telegram, pronto en WhatsApp.", "Por WhatsApp (o Telegram)."],
+  ["por chat en Telegram (pronto WhatsApp)", "por WhatsApp (o Telegram)"],
+  ["Telegram today, WhatsApp soon.", "On WhatsApp (or Telegram)."],
+  ["by chat on Telegram (WhatsApp soon)", "by chat on WhatsApp (or Telegram)"],
+];
+
 async function homePage(deps: HomeDeps, lang: Lang, form: FormState): Promise<string> {
-  const s = T[lang];
+  const fix = (t: string) => (deps.whatsappNumber ? WITH_WHATSAPP.reduce((x, [a, b]) => x.replace(a, b), t) : t);
+  const s = { ...T[lang], what: T[lang].what.map(([i, t, d]) => [i, t, fix(d)] as const), how: T[lang].how.map(([t, d]) => [t, fix(d)] as const) };
   const now = deps.now?.() ?? new Date();
   const sailMs = Date.parse(`${CRUISE_START}T00:00:00-06:00`) - now.getTime();
   const days = Math.ceil(sailMs / 86_400_000);
@@ -340,7 +349,8 @@ export async function handleHome(deps: HomeDeps, req: IncomingMessage, res: Serv
     }
 
     const everyone = await deps.store.listPeople();
-    let person = everyone.find((p) => p.contactPhone === phone) ?? everyone.find((p) => p.phoneE164 === phone);
+    let person =
+      everyone.find((p) => p.contactPhone === phone) ?? everyone.find((p) => p.phoneE164?.startsWith("+") && normalizePhone(p.phoneE164) === phone);
     if (person) {
       if ((asAdmin && !person.admin) || !person.contactPhone) {
         person = await deps.store.updatePerson(person.id, { ...(asAdmin ? { admin: true } : {}), contactPhone: person.contactPhone ?? phone });
