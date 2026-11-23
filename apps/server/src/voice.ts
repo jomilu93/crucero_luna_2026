@@ -633,6 +633,26 @@ export class VoiceService {
     const buffer = setTimeout(fill, this.deps.bufferAfterMs ?? 3500);
     const turn: Turn = { waiters: [me] };
     this.inflight.set(person.id, turn);
+    // The reply streams: each finished sentence is spoken while Claude is still writing the next one, instead of
+    // waiting for the whole turn. `pending` holds the sentence being written; `spoke` is what went out already.
+    let pending = "";
+    let spoke = false;
+    let firstWordsAt: number | undefined;
+    const onText = (delta: string) => {
+      if (me.cancelled || turn.reply !== undefined) return;
+      pending += delta;
+      const ends = [...pending.matchAll(/[.!?…\n]["')\]]*\s+/g)];
+      const end = ends.length ? ends[ends.length - 1].index! + ends[ends.length - 1][0].length : 0;
+      if (!end) return;
+      const say = speakable(pending.slice(0, end));
+      pending = pending.slice(end);
+      if (!say) return;
+      filled = true; // already talking: no filler line
+      clearTimeout(buffer);
+      firstWordsAt ??= Date.now();
+      spoke = true;
+      for (const s of sentences(say)) send(chunk({ content: `${s.trim()} ` }));
+    };
     try {
       turn.reply =
         speakable(
@@ -640,11 +660,13 @@ export class VoiceService {
             // Kept in the shared history if anyone is still listening for it, or if it already did something.
             keep: () => turn.waiters.some((w) => !w.cancelled),
             onToolStart: () => fill(),
+            onText,
           }),
         ) || (en ? "Aye aye!" : "¡A la orden!");
       const secs = ((Date.now() - started) / 1000).toFixed(1);
+      const first = firstWordsAt ? `first words ${((firstWordsAt - started) / 1000).toFixed(1)} s, ` : "";
       if (turn.waiters.every((w) => w.cancelled)) this.note(`${person.name} kept talking; turn cancelled by ElevenLabs after ${secs} s (not saved): ${text.slice(0, 50)}`);
-      else this.note(`${person.name} (${secs} s): ${text.slice(0, 50)} → ${turn.reply.slice(0, 70)}`);
+      else this.note(`${person.name} (${first}done ${secs} s): ${text.slice(0, 50)} → ${turn.reply.slice(0, 70)}`);
     } catch (err) {
       this.note(`custom LLM ERROR after ${((Date.now() - started) / 1000).toFixed(1)} s: ${err instanceof Error ? err.message : err}`);
       turn.reply = en ? "Rough seas on the line, give me a moment and ask again." : "Hay oleaje en la línea; dame un momento y vuelve a preguntar.";
@@ -652,6 +674,12 @@ export class VoiceService {
       clearTimeout(buffer);
     }
     const alive = [...turn.waiters].reverse().find((w) => !w.cancelled);
+    // This request already spoke the first sentences: finish with what's left, never the whole reply again.
+    if (alive === me && spoke) {
+      if (this.inflight.get(person.id) === turn) this.inflight.delete(person.id);
+      for (const w of turn.waiters) if (w !== me && !w.cancelled) w.speak("");
+      return finish(speakable(pending));
+    }
     if (alive) return this.deliver(person.id, turn, alive);
     // Nobody was listening (ElevenLabs re-engages after its timeout): keep the answer briefly for that request.
     setTimeout(() => this.inflight.get(person.id) === turn && this.inflight.delete(person.id), 60_000).unref?.();

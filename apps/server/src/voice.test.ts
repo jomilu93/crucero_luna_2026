@@ -138,7 +138,7 @@ describe("a slow turn", () => {
     expect(deltas[1]).toBe("Déjame revisar... ");
     expect(deltas.slice(2).join("")).toBe("¡A la orden! Bingo a las 8:00 pm. Más aquí:");
     expect(raw).not.toMatch(/^:/m);
-    expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna \(0\.\d s\): ¿qué hay hoy\?/);
+    expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna \(done 0\.\d s\): ¿qué hay hoy\?/);
   });
 
   it("survives ElevenLabs cancelling a turn mid-way (the caller kept talking) and does not save it", async () => {
@@ -591,5 +591,38 @@ describe("the Capitán's face and his usage limits", () => {
     const page = phoneBridgePage({ lang: "es", base: "/c/x", name: "Sofía", ready: true });
     expect(page).toContain("se quedó sin minutos de videollamada");
     expect(page).toMatch(/usage\|limit\|quota\|credit\|exceed/);
+  });
+});
+
+describe("a streamed reply", () => {
+  it("speaks each sentence as Claude writes it, finishes with the rest, and never repeats or adds a filler", async () => {
+    const store = new MemoryStore({ now: () => NOW });
+    seedSample(store);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const responder: Responder = {
+      respond: async (_p, text, history, o) => {
+        o?.onText?.("¡Kaliméra, Sofía! El **Bingo** es a las 8:00 pm [a04]. ");
+        o?.onText?.("Hay 2 lugares");
+        await gate; // Claude is still writing the second sentence
+        o?.onText?.(" libres. ¿Te apunto? 🎱");
+        return { text: "¡Kaliméra, Sofía! El **Bingo** es a las 8:00 pm [a04]. Hay 2 lugares libres. ¿Te apunto? 🎱", history: [...history, { role: "user", content: text }] };
+      },
+    };
+    const chat = new ChatService(store, responder, { send: async () => {} }, { now: () => NOW });
+    const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: {}, now: () => NOW, bufferAfterMs: 5 });
+    let raw = "";
+    const res = { on: () => res, destroyed: false, writableFinished: false, writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
+    const said = () => raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "").join("");
+    const sofia = (await store.getPerson("sofia"))!;
+    const turn = voice.completions({ headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never, res, JSON.stringify({ messages: [{ role: "user", content: "¿a qué hora es el bingo?" }], user_id: voice.sessionFor(sofia) }));
+    await new Promise((r) => setTimeout(r, 30)); // longer than the filler delay
+    expect(said()).toBe("¡Kaliméra, Sofía! El Bingo es a las 8:00 pm. "); // first sentence out before the turn ends
+    expect(raw).not.toContain("[DONE]");
+    release();
+    await turn;
+    expect(said().trimEnd()).toBe("¡Kaliméra, Sofía! El Bingo es a las 8:00 pm. Hay 2 lugares libres. ¿Te apunto?");
+    expect(raw.trim().endsWith("data: [DONE]")).toBe(true);
+    expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna \(first words 0\.\d s, done 0\.\d s\)/);
   });
 });
