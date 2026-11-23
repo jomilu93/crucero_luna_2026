@@ -62,7 +62,18 @@ export class Director {
     return `<ship_context>\n${await buildPassengerContext(this.store, { person: passenger, now, text, channel })}\n</ship_context>`;
   }
 
-  async respond(passenger: Person, text: string, history: BetaMessageParam[] = [], opts: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice"; onToolStart?: (name: string) => void } = {}): Promise<Turn> {
+  async respond(
+    passenger: Person,
+    text: string,
+    history: BetaMessageParam[] = [],
+    opts: {
+      channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice";
+      onToolStart?: (name: string) => void;
+      onText?: (delta: string) => void;
+      /** Streaming only: a tool call as soon as its block is written, before it runs (the call says what he's doing). */
+      onToolIntent?: (name: string, input: Record<string, unknown>) => void;
+    } = {},
+  ): Promise<Turn> {
     const now = this.now();
     const toolCalls: ToolCallRecord[] = [];
     const tools = buildTools({
@@ -78,7 +89,7 @@ export class Director {
     });
     await this.store.logMessage({ personId: passenger.id, channel: opts.channel ?? "cli", direction: "in", body: text });
 
-    const runner = this.client.beta.messages.toolRunner({
+    const params: Parameters<Anthropic["beta"]["messages"]["toolRunner"]>[0] = {
       model: this.model,
       max_tokens: 4096,
       system: [{ type: "text", text: PERSONA, cache_control: { type: "ephemeral" } }],
@@ -100,9 +111,29 @@ export class Director {
         },
       ],
       max_iterations: 8,
-    });
+    };
 
-    const final = await runner.runUntilDone();
+    // A live call streams: the reply's text goes to `onText` as it is written (sentence by sentence to the voice),
+    // instead of after the whole turn, tool calls included, has finished.
+    let final: BetaMessage;
+    let messages: BetaMessageParam[];
+    if (opts.onText) {
+      const onText = opts.onText;
+      const runner = this.client.beta.messages.toolRunner({ ...params, stream: true });
+      for await (const stream of runner) {
+        stream.on("text", (delta) => onText(delta));
+        stream.on("contentBlock", (block) => {
+          if (block.type === "tool_use") opts.onToolIntent?.(block.name, (block.input ?? {}) as Record<string, unknown>);
+        });
+        await stream.finalMessage();
+      }
+      final = await runner.done();
+      messages = [...runner.params.messages];
+    } else {
+      const runner = this.client.beta.messages.toolRunner(params);
+      final = await runner.runUntilDone();
+      messages = [...runner.params.messages];
+    }
     const reply =
       final.stop_reason === "refusal"
         ? "El Capitán tuvo que morderse la lengua con eso. ¿Hablamos del programa de hoy?"
@@ -120,6 +151,6 @@ export class Director {
       toolCalls: toolCalls.map((t) => ({ name: t.name, input: t.input })),
     });
 
-    return { text: reply, history: [...runner.params.messages], toolCalls, stopReason: final.stop_reason, usage: final.usage };
+    return { text: reply, history: messages, toolCalls, stopReason: final.stop_reason, usage: final.usage };
   }
 }

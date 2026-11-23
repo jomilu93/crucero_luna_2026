@@ -25,7 +25,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (171 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (175 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -81,7 +81,7 @@ normal). ElevenLabs re-engages by calling our LLM with no new user words; `compl
 `stillThere()` ("¿Sigues ahí, Sofía?" → "Aquí sigo…" → goodbye) without Claude or history. Needs "Volver a configurar".
 Fillers (owner's pilot feedback 2026-10-21: "Déjame revisar" after everything, then "¿Sigues ahí?" while *he* was
 checking): a filler is spoken only when a tool starts (`onToolStart`) or after 3.5 s, rotating 4 phrasings
-(`FILLERS`). A re-engage request that arrives while a turn is still in flight joins it (`inflight`) and speaks its
+(`FILLERS`; replaced 2026-11-23 by `LOOKUP_FILLERS`, see Avatar speed). A re-engage request that arrives while a turn is still in flight joins it (`inflight`) and speaks its
 answer; a filler is never counted as the caller going quiet. The custom LLM answers at any `/chat/completions` path
 (ElevenLabs appends it to the agent URL) and Diagnosticar logs every hit.
 Call length: `MAX_CALL_SECONDS` (1 h) on the ElevenLabs agent (`conversation.max_duration_seconds`, default 10 min,
@@ -125,6 +125,20 @@ uniform); "Usar este" makes it the Anam avatar. A tester hit "usage limit reache
 plan (Anam video minutes or ElevenLabs credits) in the caller's language and logs the vendor's words; the call pages
 explain a mid-call limit; Diagnosticar shows ElevenLabs credits (`/v1/user/subscription`). Anam has no usage API:
 its minutes are on lab.anam.ai → Billing.
+
+**Avatar speed (2026-11-23, family feedback "very slow"):** voice turns now stream: `Director.respond` runs the tool
+runner with `stream: true` when given `onText`, and `completions()` speaks each finished sentence while Claude writes
+the next (no filler once talking; the rest is flushed at the end, never repeated). Diagnosticar logs "first words X s,
+done Y s" per turn. Not yet timed on real calls. Fillers (owner: "déjame ver" when it makes no sense): no more canned
+rotation; `LOOKUP_FILLERS` names the lookup that just started ("Déjame revisar el programa..."), actions get none,
+"Un momentito..." only after 4 s of silence, never once he's talking; `VOICE_RULES` tells Claude not to announce
+checking himself. Then (owner: silence also feels odd) the moment Claude writes a tool call (`onToolIntent`, from the
+streamed `tool_use` block, before it runs) the call says what he's doing with its details (`ack.ts`: "Va, te apunto a
+Bingo Lunático...", "Le mando tu mensaje a Ricardo...", "Déjame revisar el programa de mañana..."); instant tools get
+none; the last line said is remembered (`lastAck`) so a re-engage right after it isn't taken for caller silence. Untried levers, owner's call: a faster model for voice turns only
+(Brain decision above), ElevenLabs `turn_eagerness: "eager"`.
+**WhatsApp (2026-11-23):** CI meta-doctor shows the GitHub secrets still point at the old …0909 number in the SIVICO
+WABA (Twilio-made, inbound never arrived). The new number (Next steps 0) is the blocker; nothing in the code.
 
 ## Next steps, in order
 0. **Owner:** new WhatsApp number → README "WhatsApp with a new number" (Meta app, payment method, system-user token,
