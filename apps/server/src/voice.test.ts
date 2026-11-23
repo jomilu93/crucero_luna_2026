@@ -135,7 +135,7 @@ describe("a slow turn", () => {
     await voice.completions(req, res, JSON.stringify({ messages: [{ role: "user", content: "¿qué hay hoy?" }], user_id: voice.sessionFor(sofia) }));
     const deltas = raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "");
     expect(deltas[0]).toBe("");
-    expect(deltas[1]).toBe("Déjame revisar... ");
+    expect(deltas[1]).toBe("Un momentito... "); // a silent turn, no lookup: the neutral line
     expect(deltas.slice(2).join("")).toBe("¡A la orden! Bingo a las 8:00 pm. Más aquí:");
     expect(raw).not.toMatch(/^:/m);
     expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna \(done 0\.\d s\): ¿qué hay hoy\?/);
@@ -430,12 +430,12 @@ describe("fillers and check-ins that respect a turn in progress", () => {
     };
     return { res: res as never, text, hangUp };
   };
-  const build = (opts: { delayMs: number; tool?: boolean; bufferAfterMs?: number }) => {
+  const build = (opts: { delayMs: number; tool?: boolean | string; bufferAfterMs?: number }) => {
     const store = new MemoryStore({ now: () => NOW });
     seedSample(store);
     const responder: Responder = {
       respond: async (_p, text, history, o) => {
-        if (opts.tool) o?.onToolStart?.("get_program");
+        if (opts.tool) o?.onToolStart?.(opts.tool === true ? "get_program" : opts.tool);
         await new Promise((r) => setTimeout(r, opts.delayMs));
         return { text: "El bingo es a las ocho.", history: [...history, { role: "user", content: text }, { role: "assistant", content: [{ type: "text", text: "El bingo es a las ocho." }] }] };
       },
@@ -446,7 +446,7 @@ describe("fillers and check-ins that respect a turn in progress", () => {
   };
   const req = (voice: VoiceService) => ({ headers: { authorization: `Bearer ${voice.llmSecret()}` } }) as never;
 
-  it("says no filler on a quick answer, one when a lookup starts, and rotates the wording", async () => {
+  it("says no filler on a quick answer, and one that names the lookup when he starts it", async () => {
     const quick = build({ delayMs: 10 });
     const sofia = (await quick.store.getPerson("sofia"))!;
     const a = liveRes();
@@ -461,8 +461,22 @@ describe("fillers and check-ins that respect a turn in progress", () => {
     };
     const first = await ask();
     const second = await ask();
-    expect(first).toBe("Déjame revisar... El bingo es a las ocho.");
-    expect(second).toBe("A ver, un segundo... El bingo es a las ocho.");
+    expect(first).toBe("Déjame revisar el programa... El bingo es a las ocho.");
+    expect(second).toBe("Déjame revisar el programa... El bingo es a las ocho."); // always matches what he's doing
+  });
+
+  it("adds no filler for actions (a sign-up, a message): only lookups get one", async () => {
+    const sofia = async (b: ReturnType<typeof build>) => (await b.store.getPerson("sofia"))!;
+    for (const tool of ["signup", "send_message", "remember", "set_preferences"]) {
+      const b = build({ delayMs: 20, tool, bufferAfterMs: 60_000 });
+      const r = liveRes();
+      await b.voice.completions(req(b.voice), r.res, JSON.stringify({ messages: [{ role: "user", content: "apúntame al bingo" }], user_id: b.voice.sessionFor(await sofia(b)) }));
+      expect(r.text()).toBe("El bingo es a las ocho.");
+    }
+    const w = build({ delayMs: 20, tool: "get_weather", bufferAfterMs: 60_000 });
+    const r = liveRes();
+    await w.voice.completions(req(w.voice), r.res, JSON.stringify({ messages: [{ role: "user", content: "¿va a llover?" }], user_id: w.voice.sessionFor(await sofia(w)) }));
+    expect(r.text()).toBe("Déjame ver el pronóstico... El bingo es a las ocho.");
   });
 
   it("answers the pending question when ElevenLabs re-engages during a lookup, instead of asking if you're still there", async () => {
@@ -472,10 +486,10 @@ describe("fillers and check-ins that respect a turn in progress", () => {
     const a = liveRes();
     const working = voice.completions(req(voice), a.res, JSON.stringify({ messages: [q], user_id: voice.sessionFor(sofia) }));
     await new Promise((r) => setTimeout(r, 40));
-    expect(a.text()).toBe("Déjame revisar... ");
+    expect(a.text()).toBe("Déjame revisar el programa... ");
     a.hangUp(); // ElevenLabs's turn timeout: it drops this request and asks again with the filler as our last line
     const b = liveRes();
-    await voice.completions(req(voice), b.res, JSON.stringify({ messages: [q, { role: "assistant", content: "Déjame revisar..." }], user_id: voice.sessionFor(sofia) }));
+    await voice.completions(req(voice), b.res, JSON.stringify({ messages: [q, { role: "assistant", content: "Déjame revisar el programa..." }], user_id: voice.sessionFor(sofia) }));
     await working;
     expect(b.text()).toBe("El bingo es a las ocho.");
     expect(b.text()).not.toContain("Sigues");
@@ -491,7 +505,7 @@ describe("fillers and check-ins that respect a turn in progress", () => {
     a.hangUp();
     await working;
     const b = liveRes();
-    await voice.completions(req(voice), b.res, JSON.stringify({ messages: [q, { role: "assistant", content: "Ahorita te digo..." }], user_id: voice.sessionFor(sofia) }));
+    await voice.completions(req(voice), b.res, JSON.stringify({ messages: [q, { role: "assistant", content: "Un momentito..." }], user_id: voice.sessionFor(sofia) }));
     expect(b.text()).toBe("El bingo es a las ocho.");
   });
 
@@ -499,10 +513,10 @@ describe("fillers and check-ins that respect a turn in progress", () => {
     const { store, voice } = build({ delayMs: 0 });
     const sofia = (await store.getPerson("sofia"))!;
     const b = liveRes();
-    await voice.completions(req(voice), b.res, JSON.stringify({ messages: [{ role: "user", content: "x" }, { role: "assistant", content: "Mmm, déjame ver... " }], user_id: voice.sessionFor(sofia) }));
+    await voice.completions(req(voice), b.res, JSON.stringify({ messages: [{ role: "user", content: "x" }, { role: "assistant", content: "Déjame ver quién va... " }], user_id: voice.sessionFor(sofia) }));
     expect(b.text()).toBe("Perdón, se cortó la señal un segundo. ¿Me lo repites?");
     const c = liveRes();
-    await voice.completions(req(voice), c.res, JSON.stringify({ messages: [{ role: "user", content: "x" }, { role: "assistant", content: "Mmm, déjame ver... " }, { role: "assistant", content: "El bingo es a las ocho." }], user_id: voice.sessionFor(sofia) }));
+    await voice.completions(req(voice), c.res, JSON.stringify({ messages: [{ role: "user", content: "x" }, { role: "assistant", content: "Déjame ver quién va... " }, { role: "assistant", content: "El bingo es a las ocho." }], user_id: voice.sessionFor(sofia) }));
     expect(c.text()).toBe("¿Sigues ahí, Sofía?");
   });
 });

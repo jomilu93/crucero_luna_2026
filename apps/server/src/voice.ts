@@ -137,17 +137,30 @@ export function greetingFor(person: Pick<Person, "name" | "nickname" | "language
     : `¡Yiá sas${first ? `, ${first}` : ""}! Aquí el ${CAPTAIN_NAME} desde el Puente del ${SHIP_NAME}. ¿En qué te ayudo?`;
 }
 
-/** Filler lines for a slow turn, rotated so the Capitán doesn't repeat himself. The trailing "... " keeps the answer from running into them. */
-export const FILLERS = {
-  es: ["Déjame revisar... ", "A ver, un segundo... ", "Mmm, déjame ver... ", "Ahorita te digo... "],
-  en: ["Let me check... ", "One second... ", "Hmm, let me see... ", "Just a moment... "],
+/**
+ * What the Capitán says while he looks something up, matched to the lookup so it always makes sense ("Déjame revisar
+ * el programa..."). Actions (sign-ups, messages, preferences) get none: the answer follows quickly and a filler would
+ * announce the wrong thing. The trailing "... " keeps the answer from running into it.
+ */
+export const LOOKUP_FILLERS: Record<string, { es: string; en: string }> = {
+  get_program: { es: "Déjame revisar el programa... ", en: "Let me check the program... " },
+  get_my_day: { es: "Déjame revisar tu agenda... ", en: "Let me check your plan... " },
+  who_is_going: { es: "Déjame ver quién va... ", en: "Let me see who's going... " },
+  get_weather: { es: "Déjame ver el pronóstico... ", en: "Let me check the forecast... " },
+  list_passengers: { es: "Reviso el manifiesto... ", en: "Checking the manifest... " },
+  suggest_for_empty_slots: { es: "Déjame buscarte algo... ", en: "Let me find you something... " },
+  my_conchitas: { es: "Reviso tu cofre... ", en: "Checking your treasure chest... " },
+  generate_flyer: { es: "Mando el flyer a la imprenta... ", en: "Sending the flyer to the print shop... " },
 };
+/** Only when a turn has been silent for several seconds anyway (ElevenLabs gives up on a silent custom LLM). */
+const MOMENT = { es: "Un momentito... ", en: "One moment... " };
 const HOLD = { es: "Ya casi lo tengo... ", en: "Almost there... " };
 
 /** True when a line the Capitán said was only a filler (he was still working, not waiting on the caller). */
 export function isFiller(line: string): boolean {
   const t = line.trim().toLowerCase();
-  return !!t && [...FILLERS.es, ...FILLERS.en, HOLD.es, HOLD.en].some((f) => f.trim().toLowerCase() === t);
+  const all = [...Object.values(LOOKUP_FILLERS), MOMENT, HOLD].flatMap((f) => [f.es, f.en]);
+  return !!t && all.some((f) => f.trim().toLowerCase() === t);
 }
 
 /** Splits speech into sentence-sized chunks so the voice can start before the whole reply is streamed. */
@@ -171,7 +184,6 @@ export class VoiceService {
   private readonly events: string[] = [];
   /** Turns still being worked on (or answered but not yet heard), per passenger: a check-in request joins them. */
   private readonly inflight = new Map<string, Turn>();
-  private readonly lastFiller = new Map<string, number>();
 
   constructor(private readonly deps: VoiceDeps) {
     this.fetchFn = deps.fetch ?? fetch;
@@ -620,17 +632,15 @@ export class VoiceService {
     if (!person) return finish("Perdón, se cortó la señal del Puente. Vuelve a llamar desde tu página, por favor.");
     if (!text.trim()) return finish(en ? "I'm listening." : "Te escucho.");
 
-    // A slow turn speaks one filler line: as soon as the Capitán starts looking something up, or after a few
-    // seconds of thinking. Quick answers get none. ElevenLabs gives up on a custom LLM that stays silent too long.
+    // At most one filler line per turn, and only while he hasn't said anything yet: the one that names the lookup
+    // he just started, or "Un momentito..." if the turn stays silent for several seconds. Quick answers get none.
     let filled = false;
-    const fill = () => {
-      if (filled) return;
+    const fill = (line: string | undefined) => {
+      if (filled || !line) return;
       filled = true;
-      const n = ((this.lastFiller.get(person.id) ?? -1) + 1) % FILLERS[lang].length;
-      this.lastFiller.set(person.id, n);
-      send(chunk({ content: FILLERS[lang][n] }));
+      send(chunk({ content: line }));
     };
-    const buffer = setTimeout(fill, this.deps.bufferAfterMs ?? 3500);
+    const buffer = setTimeout(() => fill(MOMENT[lang]), this.deps.bufferAfterMs ?? 5000);
     const turn: Turn = { waiters: [me] };
     this.inflight.set(person.id, turn);
     // The reply streams: each finished sentence is spoken while Claude is still writing the next one, instead of
@@ -659,7 +669,7 @@ export class VoiceService {
           await this.deps.chat.converse(person, text, "voice", {
             // Kept in the shared history if anyone is still listening for it, or if it already did something.
             keep: () => turn.waiters.some((w) => !w.cancelled),
-            onToolStart: () => fill(),
+            onToolStart: (name) => fill(LOOKUP_FILLERS[name]?.[lang]),
             onText,
           }),
         ) || (en ? "Aye aye!" : "¡A la orden!");
