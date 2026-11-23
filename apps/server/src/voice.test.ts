@@ -640,3 +640,40 @@ describe("a streamed reply", () => {
     expect((await voice.diagnose()).join("\n")).toMatch(/Sofía Luna \(first words 0\.\d s, done 0\.\d s\)/);
   });
 });
+
+describe("saying what he's doing", () => {
+  it("speaks the action the moment Claude commits to it, not a generic filler, and a re-engage after it isn't silence", async () => {
+    const store = new MemoryStore({ now: () => NOW });
+    seedSample(store);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const responder: Responder = {
+      respond: async (_p, text, history, o) => {
+        o?.onToolIntent?.("signup", { activity_id: "a04", status: "going" });
+        o?.onToolStart?.("signup");
+        await gate;
+        o?.onText?.("¡Listo, Sofía! Vas al Bingo esta noche. ");
+        return { text: "¡Listo, Sofía! Vas al Bingo esta noche.", history: [...history, { role: "user", content: text }] };
+      },
+    };
+    const chat = new ChatService(store, responder, { send: async () => {} }, { now: () => NOW });
+    const voice = new VoiceService({ store, chat, secret: SECRET, publicUrl: "https://ship.test", cfg: {}, now: () => NOW, bufferAfterMs: 20 });
+    const sofia = (await store.getPerson("sofia"))!;
+    const out = (raw: string) => raw.split("\n\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta.content ?? "").join("");
+    let raw = "";
+    const res = { on: () => res, destroyed: false, writableFinished: false, writeHead: () => res, write: (s: string) => ((raw += s), true), end: (s: string) => (raw += s) } as never;
+    const q = { role: "user", content: "apúntame al bingo" };
+    const turn = voice.completions({ headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never, res, JSON.stringify({ messages: [q], user_id: voice.sessionFor(sofia) }));
+    await new Promise((r) => setTimeout(r, 50)); // past the silence timer: the action line already covered it
+    expect(out(raw)).toBe("Va, te apunto a Bingo Lunático... ");
+    release();
+    await turn;
+    expect(out(raw).trim()).toBe("Va, te apunto a Bingo Lunático... ¡Listo, Sofía! Vas al Bingo esta noche.");
+
+    // ElevenLabs re-engaging right after that line (the answer not heard yet) is him working, not Sofía going quiet.
+    let raw2 = "";
+    const res2 = { on: () => res2, destroyed: false, writableFinished: false, writeHead: () => res2, write: (s: string) => ((raw2 += s), true), end: (s: string) => (raw2 += s) } as never;
+    await voice.completions({ headers: { authorization: `Bearer ${voice.llmSecret()}` } } as never, res2, JSON.stringify({ messages: [q, { role: "assistant", content: "Va, te apunto a Bingo Lunático..." }], user_id: voice.sessionFor(sofia) }));
+    expect(out(raw2)).not.toContain("Sigues");
+  });
+});

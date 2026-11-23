@@ -66,7 +66,13 @@ export class Director {
     passenger: Person,
     text: string,
     history: BetaMessageParam[] = [],
-    opts: { channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice"; onToolStart?: (name: string) => void; onText?: (delta: string) => void } = {},
+    opts: {
+      channel?: "cli" | "whatsapp" | "telegram" | "web" | "voice";
+      onToolStart?: (name: string) => void;
+      onText?: (delta: string) => void;
+      /** Streaming only: a tool call as soon as its block is written, before it runs (the call says what he's doing). */
+      onToolIntent?: (name: string, input: Record<string, unknown>) => void;
+    } = {},
   ): Promise<Turn> {
     const now = this.now();
     const toolCalls: ToolCallRecord[] = [];
@@ -116,6 +122,9 @@ export class Director {
       const runner = this.client.beta.messages.toolRunner({ ...params, stream: true });
       for await (const stream of runner) {
         stream.on("text", (delta) => onText(delta));
+        stream.on("contentBlock", (block) => {
+          if (block.type === "tool_use") opts.onToolIntent?.(block.name, (block.input ?? {}) as Record<string, unknown>);
+        });
         await stream.finalMessage();
       }
       final = await runner.done();

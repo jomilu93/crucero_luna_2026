@@ -25,7 +25,7 @@ reminders and sponsor nudges. The persona lives in `packages/agent/src/persona.t
 - **Humor rules** are in the persona; never joke about body/age/health/relationships/money/parenting.
 
 ## Commands
-`pnpm install` · `pnpm typecheck` · `pnpm test` (173 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
+`pnpm install` · `pnpm typecheck` · `pnpm test` (175 tests, PGlite included, no API) · `pnpm chat --as sofia --at 2026-12-28T13:00 --trace`
 · `pnpm morning --date 2026-12-31 [--dry]` · `pnpm eval [--judge]` (needs `ANTHROPIC_API_KEY`) · `pnpm server` · `pnpm db:migrate`.
 CI (`.github/workflows/ci.yml`) runs typecheck + tests on push; the manual `live-eval` job runs `pnpm eval` with the
 `ANTHROPIC_API_KEY` repository secret.
@@ -131,8 +131,11 @@ runner with `stream: true` when given `onText`, and `completions()` speaks each 
 the next (no filler once talking; the rest is flushed at the end, never repeated). Diagnosticar logs "first words X s,
 done Y s" per turn. Not yet timed on real calls. Fillers (owner: "déjame ver" when it makes no sense): no more canned
 rotation; `LOOKUP_FILLERS` names the lookup that just started ("Déjame revisar el programa..."), actions get none,
-"Un momentito..." only after 5 s of silence, never once he's talking; `VOICE_RULES` tells Claude not to announce
-checking himself. Untried levers, owner's call: a faster model for voice turns only
+"Un momentito..." only after 4 s of silence, never once he's talking; `VOICE_RULES` tells Claude not to announce
+checking himself. Then (owner: silence also feels odd) the moment Claude writes a tool call (`onToolIntent`, from the
+streamed `tool_use` block, before it runs) the call says what he's doing with its details (`ack.ts`: "Va, te apunto a
+Bingo Lunático...", "Le mando tu mensaje a Ricardo...", "Déjame revisar el programa de mañana..."); instant tools get
+none; the last line said is remembered (`lastAck`) so a re-engage right after it isn't taken for caller silence. Untried levers, owner's call: a faster model for voice turns only
 (Brain decision above), ElevenLabs `turn_eagerness: "eager"`.
 **WhatsApp (2026-11-23):** CI meta-doctor shows the GitHub secrets still point at the old …0909 number in the SIVICO
 WABA (Twilio-made, inbound never arrived). The new number (Next steps 0) is the blocker; nothing in the code.

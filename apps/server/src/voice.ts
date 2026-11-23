@@ -23,6 +23,7 @@ import { CAPTAIN_NAME, type ChatService, SHIP_NAME, TV_ADDRESS } from "@crucero/
 import { type Person, type Store, isPaused } from "@crucero/db";
 import { WebSocket, WebSocketServer } from "ws";
 import type { ImageGenerator } from "./flyer.js";
+import { acknowledgment } from "./ack.js";
 import type { MediaStore } from "./media.js";
 
 /**
@@ -184,6 +185,8 @@ export class VoiceService {
   private readonly events: string[] = [];
   /** Turns still being worked on (or answered but not yet heard), per passenger: a check-in request joins them. */
   private readonly inflight = new Map<string, Turn>();
+  /** The last holding line each passenger heard: if a request ends on it, he was still working, not them quiet. */
+  private readonly lastAck = new Map<string, string>();
 
   constructor(private readonly deps: VoiceDeps) {
     this.fetchFn = deps.fetch ?? fetch;
@@ -563,8 +566,9 @@ export class VoiceService {
     // the caller going quiet, and so are lines before the caller's last words.
     const afterUser = turns.slice(turns.map((m) => m.role).lastIndexOf("user") + 1);
     const silent = turns.length > 0 && (afterUser.length > 0 || !said(turns[turns.length - 1]).trim());
-    const checkIns = afterUser.filter((m) => !isFiller(said(m))).length;
-    const lastWasFiller = afterUser.length > 0 && isFiller(said(afterUser[afterUser.length - 1]));
+    const holding = (m: { content: unknown }) => isFiller(said(m)) || (!!person && said(m).trim() === this.lastAck.get(person.id));
+    const checkIns = afterUser.filter((m) => !holding(m)).length;
+    const lastWasFiller = afterUser.length > 0 && holding(afterUser[afterUser.length - 1]);
 
     const id = `chatcmpl-${randomBytes(6).toString("hex")}`;
     const created = Math.floor(Date.now() / 1000);
@@ -632,15 +636,23 @@ export class VoiceService {
     if (!person) return finish("Perdón, se cortó la señal del Puente. Vuelve a llamar desde tu página, por favor.");
     if (!text.trim()) return finish(en ? "I'm listening." : "Te escucho.");
 
-    // At most one filler line per turn, and only while he hasn't said anything yet: the one that names the lookup
-    // he just started, or "Un momentito..." if the turn stays silent for several seconds. Quick answers get none.
+    // At most one holding line per turn, and only while he hasn't said anything yet. The moment Claude commits to a
+    // tool call, he says what he is doing ("Va, te apunto a Bingo Lunático..."); only a turn still silent after a few
+    // seconds gets a neutral "Un momentito...". Quick answers get none.
     let filled = false;
+    let intended = false;
     const fill = (line: string | undefined) => {
       if (filled || !line) return;
       filled = true;
+      this.lastAck.set(person.id, line.trim());
       send(chunk({ content: line }));
     };
-    const buffer = setTimeout(() => fill(MOMENT[lang]), this.deps.bufferAfterMs ?? 5000);
+    const buffer = setTimeout(() => fill(MOMENT[lang]), this.deps.bufferAfterMs ?? 4000);
+    const onToolIntent = (name: string, input: Record<string, unknown>) => {
+      if (intended || filled) return;
+      intended = true;
+      acknowledgment(this.deps.store, person, name, input, this.now()).then(fill, () => {});
+    };
     const turn: Turn = { waiters: [me] };
     this.inflight.set(person.id, turn);
     // The reply streams: each finished sentence is spoken while Claude is still writing the next one, instead of
@@ -669,7 +681,9 @@ export class VoiceService {
           await this.deps.chat.converse(person, text, "voice", {
             // Kept in the shared history if anyone is still listening for it, or if it already did something.
             keep: () => turn.waiters.some((w) => !w.cancelled),
-            onToolStart: (name) => fill(LOOKUP_FILLERS[name]?.[lang]),
+            // Without streaming (or if the intent was missed), the lookup's own line when the tool starts.
+            onToolStart: (name) => !intended && fill(LOOKUP_FILLERS[name]?.[lang]),
+            onToolIntent,
             onText,
           }),
         ) || (en ? "Aye aye!" : "¡A la orden!");
