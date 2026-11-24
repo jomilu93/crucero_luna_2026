@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { SHIP_FORMER_NAME, SHIP_NAME, VOYAGE_NAME, buildPersonalCalendar, type ChatService } from "@crucero/agent";
 import type { Store } from "@crucero/db";
+import { serveBrand } from "./brand.js";
 import { manpatyPng, manpatySvg } from "./manpaty.js";
 import { type DiskMediaStore, mediaContentType } from "./media.js";
 import { parseMetaWebhook, validateMetaSignature } from "./meta.js";
@@ -130,6 +131,7 @@ ${bot ? `<p><a href="https://t.me/${bot}">Habla con el Capitán Lunáticus en Te
           "text/html; charset=utf-8",
         );
       }
+      if (req.method === "GET" && serveBrand(res, url.pathname)) return;
       if (req.method === "GET" && (url.pathname === "/manpaty.svg" || url.pathname === "/manpaty.png")) {
         const pose = url.searchParams.get("pose") === "cheer" ? "cheer" : "wave";
         const svg = url.pathname.endsWith(".svg");

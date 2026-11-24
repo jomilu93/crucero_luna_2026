@@ -186,3 +186,33 @@ describe("the website as the front door", () => {
     expect(tv.joinQr).toMatch(/^data:image\/png;base64,/);
   });
 });
+
+describe("the Moonshine of the Seas logo", () => {
+  it("serves the logo, emblem and icons, and every page wears them", async () => {
+    const store = new MemoryStore({ now: () => NOW });
+    seedSample(store);
+    const web = { store, outbox: { send: async () => {} }, publicUrl: "http://ship.test", secret: SECRET, now: () => NOW };
+    const router = createRouter({ store, chat: new ChatService(store, { respond: async (_p, t, h) => ({ text: t, history: h }) }, { send: async () => {} }), publicUrl: "http://ship.test", web, webhooks: [] });
+    const server = createServer((req, res) => void router(req, res));
+    await new Promise<void>((r) => server.listen(0, r));
+    const base = `http://localhost:${(server.address() as AddressInfo).port}`;
+    try {
+      for (const [path, type] of [["/brand/logo.webp", "image/webp"], ["/brand/logo.png", "image/png"], ["/brand/emblem.png", "image/png"], ["/brand/apple-touch-icon.png", "image/png"], ["/favicon.ico", "image/png"]]) {
+        const res = await fetch(`${base}${path}`);
+        expect(res.status, path).toBe(200);
+        expect(res.headers.get("content-type")).toBe(type);
+        expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+      }
+      expect((await fetch(`${base}/brand/../package.json`)).status).toBe(404);
+      const home = await (await fetch(`${base}/?home`)).text();
+      expect(home).toContain('<h1 class="logocard"><img src="/brand/logo.webp" alt="Moonshine of the Seas"');
+      expect(home).toContain('<link rel="icon" type="image/png" href="/brand/favicon.png">');
+      expect(home).toContain('content="http://ship.test/brand/logo.png"');
+      const cabin = await (await fetch(`${base}/c/${cabinToken(SECRET, (await store.getPerson("sofia"))!)}`)).text();
+      expect(cabin).toContain('<span class="emblem"');
+      expect(cabin).toContain('href="/brand/apple-touch-icon.png"');
+    } finally {
+      server.close();
+    }
+  });
+});

@@ -4,6 +4,7 @@
  * 16-bit PCM over a WebSocket and the TV feeds it to the avatar as its microphone.
  */
 import { SHIP_NAME } from "@crucero/agent";
+import { BRAND_HEAD } from "./brand.js";
 import { MAX_CALL_SECONDS } from "./voice.js";
 import { esc } from "./web.js";
 
@@ -87,7 +88,7 @@ export function phoneBridgePage(o: PhoneBridgeOpts): string {
   };
   const face = o.portraitUrl ? `<img src="${esc(o.portraitUrl)}" alt="">` : `<div class="ph">🧑‍✈️</div>`;
   return `<!doctype html><html lang="${o.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1f3f"><title>${S.title} · ${SHIP_NAME}</title>
+<meta name="theme-color" content="#0b1f3f"><title>${S.title} · ${SHIP_NAME}</title>${BRAND_HEAD}
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"><style>${PHONE_CSS}</style></head><body>
 <div class="wrap">
   <div class="top"><a href="${esc(o.base)}">‹ ${S.back}</a><span class="sub">🌙 ${SHIP_NAME}</span></div>
