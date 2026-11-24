@@ -17,6 +17,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { normalizePhone } from "@crucero/db";
+import { BRAND_HEAD, EMBLEM_CSS, emblemBadge } from "./brand.js";
 import { phoneBridgePage } from "./bridge.js";
 import type { VoiceService } from "./voice.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -376,6 +377,7 @@ details.card summary .ic.go{margin-left:auto;transition:transform .2s}details[op
 .ok{color:var(--ok);font-weight:700}.diag{white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:12px;padding:10px;margin:10px 0 0}.no{color:var(--warn);font-weight:700}
 .empty{text-align:center;padding:28px 18px;color:var(--muted)}.empty .e{font-size:40px}
 .btn.small{padding:9px 12px;font-size:14px;border-radius:12px;flex:none}
+${EMBLEM_CSS}
 .chest{display:flex;gap:14px;align-items:center;padding:14px 16px;text-decoration:none;color:#4a3200;background:linear-gradient(135deg,#ffe7a3,#f2b632)}
 .chest .shell{font-size:34px;line-height:1}.chest .grow{flex:1}.chest b{font-size:26px}.chest .m{color:#6b4a00}.chest .ic.go{color:#6b4a00}
 .chestbig{text-align:center;padding:22px 16px}.chestbig .n{font-size:56px;font-weight:800;line-height:1;color:#8a5a00}
@@ -402,13 +404,13 @@ function page(
     : "";
   const top = opts.bare
     ? ""
-    : `<header class="top"><a class="logo" href="${base || "#"}"><span class="moon"></span><span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(s.sail)}</small></span></a><div class="topr">${
+    : `<header class="top"><a class="logo" href="${base || "#"}">${emblemBadge(36)}<span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(s.sail)}</small></span></a><div class="topr">${
         opts.token
           ? `<form method="post" action="${base}/lang"><input type="hidden" name="to" value="${opts.lang === "es" ? "en" : "es"}"><button class="pill" hreflang="${opts.lang === "es" ? "en" : "es"}">🌐 ${opts.lang === "es" ? "English" : "Español"}</button></form>`
           : ""
       }${opts.chat ? `<a class="pill" href="${esc(opts.chat)}" aria-label="${esc(s.openChat)}">${icon("chat", 16)} ${esc(s.chat)}</a>` : ""}</div></header>`;
   return `<!doctype html><html lang="${opts.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1f3f"><title>${esc(title)} · ${esc(SHIP_NAME)}</title>
+<meta name="theme-color" content="#0b1f3f"><title>${esc(title)} · ${esc(SHIP_NAME)}</title>${BRAND_HEAD}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>${CSS}</style></head><body><div class="app">${top}

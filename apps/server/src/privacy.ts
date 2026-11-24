@@ -2,6 +2,8 @@
  * Public privacy policy, served at /privacy (Meta requires a URL before an app can be published).
  * Bilingual, plain HTML, no tracking. The contact line comes from PRIVACY_CONTACT when set.
  */
+import { BRAND_HEAD } from "./brand.js";
+
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 export function privacyPolicyHtml(contact?: string): string {
@@ -12,7 +14,7 @@ export function privacyPolicyHtml(contact?: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Aviso de privacidad · Crucero Luna 2026</title>
+<title>Aviso de privacidad · Crucero Luna 2026</title>${BRAND_HEAD}
 <style>
   :root { color-scheme: light dark; }
   body { font: 16px/1.55 system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; }

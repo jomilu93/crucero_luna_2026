@@ -14,6 +14,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { CAPTAIN_NAME, MASCOT_NAME, SHIP_FORMER_NAME, SHIP_NAME, VOYAGE_NAME } from "@crucero/agent";
 import { type Person, CRUISE_END, CRUISE_START, normalizePhone } from "@crucero/db";
+import { BRAND_HEAD, EMBLEM_CSS, emblemBadge } from "./brand.js";
 import { CSS, type WebDeps, cabinToken, esc, html, icon, personFromToken, readForm, redirect, sessionCookie, sessionToken } from "./web.js";
 
 type Lang = "es" | "en";
@@ -140,6 +141,8 @@ body{padding-bottom:0}
 .sea .eyebrow{font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.85;font-weight:700}
 .sea h1{font-size:clamp(34px,7vw,64px);line-height:1.03;margin:10px 0 6px;letter-spacing:-.01em}
 .sea .formerly{font-style:italic;opacity:.75}
+.sea h1.logocard{display:inline-block;margin:14px 0 10px;padding:14px 22px 10px;background:#fff;border-radius:26px;box-shadow:0 14px 34px rgba(0,0,0,.28)}
+.sea h1.logocard img{display:block;width:min(72vw,360px);height:auto}
 .sea .lede{font-size:clamp(16px,2.2vw,19px);opacity:.92;max-width:560px;margin:16px 0 0}
 .sea .when{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}.sea .when span{background:rgba(255,255,255,.14);border-radius:999px;padding:7px 14px;font-weight:600;font-size:14px}
 .sea .ctas{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}.sea .ctas .btn{padding:15px 22px;font-size:17px}
@@ -240,9 +243,9 @@ async function homePage(deps: HomeDeps, lang: Lang, form: FormState): Promise<st
   const other = lang === "es" ? "en" : "es";
 
   const count = sailMs > 0 ? `<div class="count">${days}<small>${days === 1 ? s.day : s.days}</small></div>` : ended ? "" : `<div class="count" style="font-size:28px">${s.sailing}</div>`;
-  const hero = `<section class="sea"><div class="moon"></div><div class="wrap"><div>
+  const hero = `<section class="sea"><div class="wrap"><div>
 <div class="eyebrow">${esc(s.eyebrow)}</div>
-<h1>${esc(SHIP_NAME)}</h1><div class="formerly">${s.formerly} ${esc(SHIP_FORMER_NAME)}</div>
+<h1 class="logocard"><img src="/brand/logo.webp" alt="${esc(SHIP_NAME)}" width="900" height="739"></h1><div class="formerly">${s.formerly} ${esc(SHIP_FORMER_NAME)}</div>
 <p class="lede">${esc(s.pitch)}</p>
 <div class="when"><span>📅 ${esc(s.dates)}</span><span>📍 Acapulco</span></div>
 <div class="ctas"><a class="btn" href="#join">${esc(s.join)} →</a><a class="btn ghost" href="#join">${esc(s.signIn)}</a></div>
@@ -274,12 +277,12 @@ ${form.error ? `<div class="err" role="alert">${esc(form.error)}</div>` : ""}
 <button style="width:100%;margin-top:18px;padding:15px">${s.board} 🚢</button></form></div></section>`;
 
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1f3f"><title>${esc(SHIP_NAME)} · ${esc(VOYAGE_NAME)}</title>
-<meta name="description" content="${esc(s.pitch)}"><meta property="og:title" content="${esc(SHIP_NAME)} · ${esc(VOYAGE_NAME)}"><meta property="og:description" content="${esc(s.pitch)}"><meta property="og:image" content="${esc(deps.publicUrl)}/manpaty.png?pose=cheer">
+<meta name="theme-color" content="#0b1f3f"><title>${esc(SHIP_NAME)} · ${esc(VOYAGE_NAME)}</title>${BRAND_HEAD}
+<meta name="description" content="${esc(s.pitch)}"><meta property="og:title" content="${esc(SHIP_NAME)} · ${esc(VOYAGE_NAME)}"><meta property="og:description" content="${esc(s.pitch)}"><meta property="og:image" content="${esc(deps.publicUrl)}/brand/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>${CSS}${HOME_CSS}</style></head><body>
-<header class="nav"><div class="wrap"><a class="logo" href="/"><span class="moon"></span><span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(VOYAGE_NAME)} · Acapulco</small></span></a>
+<style>${CSS}${HOME_CSS}${EMBLEM_CSS}</style></head><body>
+<header class="nav"><div class="wrap"><a class="logo" href="/">${emblemBadge(40)}<span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(VOYAGE_NAME)} · Acapulco</small></span></a>
 <div class="links"><a class="pill" href="/?home&lang=${other}${next ? `&next=${esc(next.slice(1))}` : ""}" hreflang="${other}">🌐 ${s.langSwitch}</a><a class="btn" href="#join">${s.join}</a></div></div></header>
 ${hero}${invitedTo || form.error ? join : ""}${feats}${steps}${crew}${invitedTo || form.error ? "" : join}
 <div class="foot">${esc(SHIP_NAME)} · ${esc(VOYAGE_NAME)} · <a href="${esc(deps.privacyUrl ?? "/privacy")}">${s.privacy}</a></div>

@@ -7,6 +7,7 @@ import type { ServerResponse } from "node:http";
 import { SHIP_FORMER_NAME, SHIP_NAME, headlineFor } from "@crucero/agent";
 import { type Activity, type Store, CRUISE_START, dayBounds, prettyDate, prettyTime, shipDate } from "@crucero/db";
 import QRCode from "qrcode";
+import { BRAND_HEAD } from "./brand.js";
 import { tvBridge } from "./bridge.js";
 import type { VoiceService } from "./voice.js";
 import { esc } from "./web.js";
@@ -122,13 +123,14 @@ export async function serveTv(deps: TvDeps, res: ServerResponse, sub: string, me
 }
 
 const TV_HTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Puente · ${SHIP_NAME}</title>
+<title>Puente · ${SHIP_NAME}</title>${BRAND_HEAD}
 <style>
 :root{--bg:#07131f;--panel:#0f2236;--ink:#f3f6fb;--muted:#9fb3c8;--gold:#ffd166;--accent:#f76b1c}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
 .wrap{display:grid;grid-template-columns:1.25fr 1fr;grid-template-rows:auto minmax(0,1fr);gap:2vh 2vw;height:100vh;padding:3vh 3vw}
 header{grid-column:1/3;display:flex;justify-content:space-between;align-items:baseline}
-.brand{font-weight:800;letter-spacing:.12em;font-size:3vh;color:var(--gold)}.clock{font-size:7vh;font-weight:800;font-variant-numeric:tabular-nums}
+.brand{display:flex;align-items:center;gap:1.4vh;font-weight:800;letter-spacing:.12em;font-size:3vh;color:var(--gold)}
+.tvemb{display:inline-grid;place-items:center;width:7vh;height:7vh;border-radius:50%;background:#fff;box-shadow:0 0 0 .4vh rgba(255,209,102,.6)}.tvemb img{width:5.6vh;height:5.6vh;object-fit:contain}.clock{font-size:7vh;font-weight:800;font-variant-numeric:tabular-nums}
 .date{font-size:2.6vh;color:var(--muted)}.headline{font-size:2.4vh;color:var(--gold)}
 .panel{background:var(--panel);border-radius:2vh;padding:2.4vh 2vw;overflow:hidden}
 .label{font-size:2vh;letter-spacing:.2em;color:var(--muted);text-transform:uppercase}
@@ -143,7 +145,7 @@ li .t{font-variant-numeric:tabular-nums;color:var(--muted);min-width:9.5em}li.pa
 .empty{font-size:3vh;color:var(--muted)}.empty.mp{display:flex;gap:1.6vw;align-items:center}.empty.mp img{height:12vh}
 .formerly{font-size:1.8vh;color:var(--muted);font-style:italic;letter-spacing:.04em}
 </style></head><body><div class="wrap">
-<header><div><div class="brand">🌙 ${SHIP_NAME.toUpperCase()} · EL PUENTE</div><div class="formerly">anteriormente ${SHIP_FORMER_NAME}</div><div class="date" id="date"></div><div class="headline" id="headline"></div></div><div class="clock" id="clock">--:--</div></header>
+<header><div><div class="brand"><span class="tvemb"><img src="/brand/emblem.png" alt=""></span>${SHIP_NAME.toUpperCase()} · EL PUENTE</div><div class="formerly">anteriormente ${SHIP_FORMER_NAME}</div><div class="date" id="date"></div><div class="headline" id="headline"></div></div><div class="clock" id="clock">--:--</div></header>
 <div class="panel"><div id="now"></div><div id="next"></div><div class="label" style="margin-top:3vh" id="todayLabel">Programa de hoy</div><ul id="today"></ul></div>
 <div class="right"><div class="panel flyer" id="flyer"><div class="empty">🛳️</div></div><div class="panel join" id="join"></div></div>
 </div><script>
