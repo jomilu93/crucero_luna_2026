@@ -55,7 +55,13 @@ const T = {
     aboard: "a bordo",
     activities: "actividades",
     formTitle: "Únete al crucero",
-    formSub: "Si ya te uniste, usa el mismo número y entras a tu camarote.",
+    formSub: "Tu nombre, tu número y el código del barco.",
+    signinTitle: "Entra a tu camarote",
+    signinSub: "Con el número con el que te uniste y el código del barco.",
+    enter: "Entrar",
+    toSignin: "¿Ya te uniste? Entra a tu camarote",
+    toJoin: "¿Primera vez? Únete al crucero",
+    errNotAboard: "No encontramos ese número a bordo. Revisa que sea el mismo con el que te uniste, o únete al crucero.",
     name: "Tu nombre",
     namePh: "Como te dice la familia",
     phone: "Tu número",
@@ -107,7 +113,13 @@ const T = {
     aboard: "aboard",
     activities: "activities",
     formTitle: "Join the cruise",
-    formSub: "Already joined? Use the same number and you're back in your cabin.",
+    formSub: "Your name, your number and the ship's code.",
+    signinTitle: "Back to your cabin",
+    signinSub: "With the number you joined with and the ship's code.",
+    enter: "Sign in",
+    toSignin: "Already joined? Sign in to your cabin",
+    toJoin: "First time? Join the cruise",
+    errNotAboard: "We couldn't find that number aboard. Check it's the one you joined with, or join the cruise.",
     name: "Your name",
     namePh: "What the family calls you",
     phone: "Your number",
@@ -164,7 +176,7 @@ section.blk{padding:36px 0 8px}section.blk h2{font-size:clamp(24px,3.6vw,34px);m
 .mate img,.mate .ph{width:84px;height:84px;flex:none;border-radius:50%;object-fit:cover;background:var(--sky);display:grid;place-items:center;font-size:40px}.mate img.mpimg{border-radius:0;object-fit:contain;background:none}
 .mate b{display:block;font-size:17px}.mate p{margin:4px 0 0;color:var(--muted);font-size:15px}
 .joinbox{background:var(--card);border-radius:24px;box-shadow:var(--shadow);padding:22px;max-width:560px;margin:0 auto}
-.joinbox h2{margin:0}.joinbox .m{margin-top:4px}
+#join{scroll-margin-top:76px}.joinbox h2{margin:0}.joinbox .switch{text-align:center;margin-top:14px}.joinbox .switch a{font-weight:700}.joinbox .m{margin-top:4px}
 .phone{display:grid;grid-template-columns:150px 1fr;gap:8px}
 .err{background:#fdecdf;color:var(--warn);border-radius:12px;padding:10px 12px;font-weight:600;margin-top:12px}
 @media (prefers-color-scheme:dark){.err{background:#3a1d0e}}
@@ -212,6 +224,8 @@ const langOf = (req: IncomingMessage, url: URL, res: ServerResponse): Lang => {
 const nextOf = (raw: string | null | undefined): string => (raw && /^a\/[A-Za-z0-9-]+$/.test(raw) ? `/${raw}` : "");
 
 interface FormState {
+  /** "signin": the "Ya estoy a bordo" form, number and code only, for passengers already aboard. */
+  mode?: "join" | "signin";
   name?: string;
   phone?: string;
   country?: string;
@@ -243,12 +257,16 @@ async function homePage(deps: HomeDeps, lang: Lang, form: FormState): Promise<st
   const other = lang === "es" ? "en" : "es";
 
   const count = sailMs > 0 ? `<div class="count">${days}<small>${days === 1 ? s.day : s.days}</small></div>` : ended ? "" : `<div class="count" style="font-size:28px">${s.sailing}</div>`;
+  // "Ya estoy a bordo" opens the same box as a sign-in: number and code only, for passengers already aboard.
+  const signin = form.mode === "signin";
+  const keep = `${lang !== "es" ? `&lang=${lang}` : ""}${next ? `&next=${esc(next.slice(1))}` : ""}`;
+  const switchTo = signin ? `<a href="/?home${keep}#join">${s.toJoin}</a>` : `<a href="/?home&entrar=1${keep}#join">${s.toSignin}</a>`;
   const hero = `<section class="sea"><div class="wrap"><div>
 <div class="eyebrow">${esc(s.eyebrow)}</div>
 <h1 class="logocard"><img src="/brand/logo.webp" alt="${esc(SHIP_NAME)}" width="900" height="739"></h1><div class="formerly">${s.formerly} ${esc(SHIP_FORMER_NAME)}</div>
 <p class="lede">${esc(s.pitch)}</p>
 <div class="when"><span>📅 ${esc(s.dates)}</span><span>📍 Acapulco</span></div>
-<div class="ctas"><a class="btn" href="#join">${esc(s.join)} →</a><a class="btn ghost" href="#join">${esc(s.signIn)}</a></div>
+<div class="ctas"><a class="btn" href="#join">${esc(s.join)} →</a><a class="btn ghost" href="/?home&entrar=1${keep}#join">${esc(s.signIn)}</a></div>
 <div class="stats2">${count ? `<div>${count}</div>` : ""}<div><b>${people.length}</b><span>${s.aboard}</span></div><div><b>${acts.length}</b><span>${s.activities}</span></div></div>
 </div><div class="art">${portrait ? `<img class="cap" src="${esc(portrait)}" alt="${esc(CAPTAIN_NAME)}">` : `<span class="cap">🧑‍✈️</span>`}<img class="mp" src="/manpaty.svg?pose=wave" alt="${esc(MASCOT_NAME)}"></div></div></section>`;
 
@@ -264,17 +282,18 @@ async function homePage(deps: HomeDeps, lang: Lang, form: FormState): Promise<st
 
   const country = form.country ?? "52";
   const join = `<section class="blk" id="join"><div class="wrap"><form class="joinbox" method="post" action="/join">
-<h2>${s.formTitle}</h2><div class="m">${s.formSub}</div>
+<h2>${signin ? s.signinTitle : s.formTitle}</h2><div class="m">${signin ? s.signinSub : s.formSub}</div>
 ${invitedTo ? `<div class="invite"><span style="font-size:28px">${esc(invitedTo.emoji)}</span><span>${s.invited}: ${esc(invitedTo.title)}</span></div>` : ""}
 ${form.error ? `<div class="err" role="alert">${esc(form.error)}</div>` : ""}
-<input type="hidden" name="lang" value="${lang}"><input type="hidden" name="next" value="${esc(next.slice(1))}">
-<label for="name">${s.name}</label><input id="name" name="name" required maxlength="60" autocomplete="name" placeholder="${esc(s.namePh)}" value="${esc(form.name ?? "")}">
+<input type="hidden" name="lang" value="${lang}"><input type="hidden" name="next" value="${esc(next.slice(1))}"><input type="hidden" name="mode" value="${signin ? "signin" : "join"}">
+${signin ? "" : `<label for="name">${s.name}</label><input id="name" name="name" required maxlength="60" autocomplete="name" placeholder="${esc(s.namePh)}" value="${esc(form.name ?? "")}">`}
 <label for="phone">${s.phone}</label><div class="phone"><select name="country" aria-label="País"><option value="52"${country === "52" ? " selected" : ""}>🇲🇽 +52</option><option value="1"${country === "1" ? " selected" : ""}>🇺🇸 +1</option><option value="+"${country === "+" ? " selected" : ""}>${s.other}</option></select>
 <input id="phone" name="phone" type="tel" required inputmode="tel" autocomplete="tel-national" placeholder="55 1234 5678" value="${esc(form.phone ?? "")}"></div>
 <div class="m" style="margin-top:6px">${s.phoneHelp}</div>
 <label for="code">${s.code}</label><input id="code" name="code" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="••••••">
 <div class="m" style="margin-top:6px">${s.codeHelp}</div>
-<button style="width:100%;margin-top:18px;padding:15px">${s.board} 🚢</button></form></div></section>`;
+<button style="width:100%;margin-top:18px;padding:15px">${signin ? s.enter : s.board} 🚢</button>
+<div class="m switch">${switchTo}</div></form></div></section>`;
 
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1f3f"><title>${esc(SHIP_NAME)} · ${esc(VOYAGE_NAME)}</title>${BRAND_HEAD}
@@ -284,9 +303,9 @@ ${form.error ? `<div class="err" role="alert">${esc(form.error)}</div>` : ""}
 <style>${CSS}${HOME_CSS}${EMBLEM_CSS}</style></head><body>
 <header class="nav"><div class="wrap"><a class="logo" href="/">${emblemBadge(40)}<span>${esc(SHIP_NAME.toUpperCase())}<small>${esc(VOYAGE_NAME)} · Acapulco</small></span></a>
 <div class="links"><a class="pill" href="/?home&lang=${other}${next ? `&next=${esc(next.slice(1))}` : ""}" hreflang="${other}">🌐 ${s.langSwitch}</a><a class="btn" href="#join">${s.join}</a></div></div></header>
-${hero}${invitedTo || form.error ? join : ""}${feats}${steps}${crew}${invitedTo || form.error ? "" : join}
+${hero}${invitedTo || form.error || signin ? join : ""}${feats}${steps}${crew}${invitedTo || form.error || signin ? "" : join}
 <div class="foot">${esc(SHIP_NAME)} · ${esc(VOYAGE_NAME)} · <a href="${esc(deps.privacyUrl ?? "/privacy")}">${s.privacy}</a></div>
-${form.error || invitedTo ? `<script>document.getElementById("join").scrollIntoView()</script>` : ""}</body></html>`;
+${form.error || invitedTo || signin ? `<script>document.getElementById("join").scrollIntoView()</script>` : ""}</body></html>`;
 }
 
 /** The passenger this browser already belongs to, if its cabin cookie is still valid. */
@@ -306,7 +325,7 @@ export async function handleHome(deps: HomeDeps, req: IncomingMessage, res: Serv
       redirect(res, `/c/${me.token}${next}`);
       return true;
     }
-    html(res, 200, await homePage(deps, lang, { next }));
+    html(res, 200, await homePage(deps, lang, { next, mode: url.searchParams.has("entrar") ? "signin" : "join" }));
     return true;
   }
 
@@ -332,13 +351,14 @@ export async function handleHome(deps: HomeDeps, req: IncomingMessage, res: Serv
       phone: (f.get("phone") ?? "").trim().slice(0, 30),
       country: f.get("country") ?? "52",
       next: nextOf(f.get("next")),
+      mode: f.get("mode") === "signin" ? "signin" : "join",
     };
     const fail = async (error: string, status = 400) => html(res, status, await homePage(deps, formLang, { ...form, error }));
 
     const who = clientOf(req);
     const t = tries.get(who);
     if (t && t.n >= MAX_TRIES && Date.now() < t.until) return (await fail(s.errSlow, 429), true);
-    if (!form.name) return (await fail(s.errName), true);
+    if (!form.name && form.mode !== "signin") return (await fail(s.errName), true);
     const typed = form.country === "+" || form.phone!.startsWith("+") ? (form.phone!.startsWith("+") ? form.phone! : `+${form.phone}`) : form.phone!;
     const phone = normalizePhone(typed, form.country === "1" ? "1" : "52");
     if (!phone) return (await fail(s.errPhone), true);
@@ -354,6 +374,9 @@ export async function handleHome(deps: HomeDeps, req: IncomingMessage, res: Serv
     const everyone = await deps.store.listPeople();
     let person =
       everyone.find((p) => p.contactPhone === phone) ?? everyone.find((p) => p.phoneE164?.startsWith("+") && normalizePhone(p.phoneE164) === phone);
+    // Signing in only finds a passenger; it never boards a new one.
+    if (!person && form.mode === "signin") return (await fail(s.errNotAboard, 404), true);
+    const boarded = !person;
     if (person) {
       if ((asAdmin && !person.admin) || !person.contactPhone) {
         person = await deps.store.updatePerson(person.id, { ...(asAdmin ? { admin: true } : {}), contactPhone: person.contactPhone ?? phone });
@@ -363,7 +386,8 @@ export async function handleHome(deps: HomeDeps, req: IncomingMessage, res: Serv
     }
     const token = cabinToken(deps.secret, person);
     res.setHeader("Set-Cookie", sessionCookie(token, deps.publicUrl));
-    redirect(res, `/c/${token}${form.next ?? ""}${form.next ? "" : "?welcome=1"}`);
+    // Only someone who just boarded gets the welcome card; a returning passenger goes straight to their cabin.
+    redirect(res, `/c/${token}${form.next ?? ""}${form.next || !boarded ? "" : "?welcome=1"}`);
     return true;
   }
 

@@ -95,7 +95,7 @@ describe("the website as the front door", () => {
     const before = (await store.listPeople()).length;
     const again = await join({ name: "Lupe (otro cel)", phone: "+52 1 55 1234 5678", code: "LUNA2026" });
     const lupe = (await store.listPeople()).find((p) => p.contactPhone === "+525512345678")!;
-    expect(again.headers.get("location")).toBe(`/c/${cabinToken(SECRET, lupe)}?welcome=1`);
+    expect(again.headers.get("location")).toBe(`/c/${cabinToken(SECRET, lupe)}`); // returning: no welcome card
     expect((await store.listPeople()).length).toBe(before);
     expect(lupe.name).toBe("Tía Lupe");
 
@@ -105,6 +105,28 @@ describe("the website as the front door", () => {
     const promoted = await join({ name: "Tía Lupe", phone: "5512345678", code: "CapitanaPopeye" });
     expect(promoted.status).toBe(303);
     expect((await store.getPerson(lupe.id))!.admin).toBe(true);
+  });
+
+  it("has its own sign-in for passengers already aboard: number and code, never boarding anyone new", async () => {
+    const home = await (await fetch(`${base}/`)).text();
+    expect(home).toContain('href="/?home&entrar=1#join">Ya estoy a bordo</a>');
+    const page = await (await fetch(`${base}/?home&entrar=1`)).text();
+    expect(page).toContain("<h2>Entra a tu camarote</h2>");
+    expect(page).toContain('name="mode" value="signin"');
+    expect(page).not.toContain('id="name"');
+    expect(page).toContain("¿Primera vez? Únete al crucero");
+    expect(page.indexOf('id="join"')).toBeLessThan(page.indexOf("¿Qué pasa a bordo?")); // the box comes first
+    const lupe = (await store.listPeople()).find((p) => p.contactPhone === "+525512345678")!;
+    const back = await join({ mode: "signin", phone: "55 1234 5678", code: "Luna2026" }, { "Fly-Client-IP": "signin" });
+    expect(back.headers.get("location")).toBe(`/c/${cabinToken(SECRET, lupe)}`);
+    const before = (await store.listPeople()).length;
+    const stranger = await join({ mode: "signin", phone: "55 0000 1111", code: "Luna2026" }, { "Fly-Client-IP": "signin" });
+    expect(stranger.status).toBe(404);
+    const body = await stranger.text();
+    expect(body).toContain("No encontramos ese número a bordo");
+    expect(body).toContain('name="mode" value="signin"');
+    expect((await store.listPeople()).length).toBe(before);
+    expect((await join({ mode: "signin", phone: "55 1234 5678", code: "nope" }, { "Fly-Client-IP": "signin" })).status).toBe(403);
   });
 
   it("stops guessing the code after a few tries", async () => {
